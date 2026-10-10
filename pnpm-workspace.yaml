@@ -1,0 +1,4 @@
+# Własny root workspace – bez tego pnpm traktuje ~/package.json jako root i instaluje do ~/node_modules.
+packages: []
+onlyBuiltDependencies:
+  - esbuild

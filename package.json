@@ -1,0 +1,40 @@
+{
+  "name": "disk-lens",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "typecheck": "tsc -b --pretty",
+    "lint": "eslint src && cd src-tauri && cargo clippy --all-targets -- -D warnings",
+    "test": "cd src-tauri && cargo test",
+    "tauri": "tauri",
+    "build:debug": "tauri build --debug --features mcp-bridge --config '{\"app\":{\"withGlobalTauri\":true,\"security\":{\"csp\":null}}}'",
+    "build:mac": "tauri build --target universal-apple-darwin --bundles app,dmg",
+    "build:windows": "tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis",
+    "build:linux": "./scripts/build-linux.sh"
+  },
+  "dependencies": {
+    "@tanstack/react-virtual": "^3.14.14",
+    "@tauri-apps/api": "^2.12.2",
+    "@tauri-apps/plugin-dialog": "^2.8.1",
+    "@tauri-apps/plugin-opener": "^2.7.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@tauri-apps/cli": "^2.12.1",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^6.1.2",
+    "eslint": "^10.12.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^16.0.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.1",
+    "vite": "^8.3.4"
+  }
+}
