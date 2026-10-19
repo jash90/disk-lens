@@ -11,7 +11,8 @@ On top of that:
 - tabs: largest files, breakdown by type, skipped paths, comparison of two scans, disk (capacity, free space, scan vs. disk usage);
 - filters: name, minimum size, extensions, exclusions; applied without rescanning;
 - actions: reveal in the file manager (Finder / Explorer), copy path, open a terminal, rescan a folder, move to Trash;
-- export to CSV/JSON, and saving/loading a scan as a `.disklens` file.
+- export to CSV/JSON, and saving/loading a scan as a `.disklens` file;
+- in-app updates from GitHub Releases (signed; installing always needs a click).
 
 The app's interface is in Polish. Below, UI labels are quoted as they appear in the app, with an English translation.
 
@@ -26,6 +27,8 @@ Download the package for your system from [Releases](../../releases):
 | Windows 11 ARM64 | `Disk.Lens_<version>_arm64-setup.exe` |
 | Linux x86_64 | `.AppImage`, `.deb` (Debian/Ubuntu) or `.rpm` (Fedora/openSUSE), `amd64`/`x86_64` |
 | Linux ARM64 | as above, `arm64`/`aarch64` |
+
+Since 0.3.0 the app checks for a new version a few seconds after start and shows an **Aktualizacja X.Y.Z** (Update) button in the toolbar; **Plik → Sprawdź aktualizacje…** (File → Check for updates) checks on demand. The download is verified against a minisign key built into the app, then the app restarts as the new version. Version 0.2.0 has no updater, so 0.3.0 has to be installed once by hand.
 
 - **macOS:** since 0.2.0 the app is signed with a Developer ID certificate and notarized by Apple, so it opens without warnings. To scan protected folders (Mail, Messages, app containers), grant Disk Lens **Full Disk Access** in System Settings → Privacy & Security.
 
@@ -53,6 +56,8 @@ pnpm build:linux            # deb, rpm, AppImage for amd64 and arm64 in Docker �
 ```
 
 For Windows ARM64: `pnpm tauri build --runner cargo-xwin --target aarch64-pc-windows-msvc --bundles nsis`. When cross-compiling, `llvm-rc` and `lld-link` must be on `PATH` (`export PATH="$(brew --prefix llvm)/bin:$PATH"`).
+
+`build:mac`, `build:windows` and `build:linux` also sign the updater artifacts (`.app.tar.gz`, `-setup.exe`, `.AppImage`, `.deb`, `.rpm` + `.sig`), so they need the updater key – see [Releasing](#releasing). `build:debug` skips them.
 
 To sign and notarize the macOS build, set `APPLE_SIGNING_IDENTITY` (Developer ID Application certificate), `APPLE_ID`, `APPLE_PASSWORD` (app-specific password) and `APPLE_TEAM_ID` before `pnpm build:mac`. Tauri signs, notarizes and staples the `.app` and signs the `.dmg`; notarize the `.dmg` itself with `xcrun notarytool submit … --wait` and `xcrun stapler staple`.
 
@@ -94,6 +99,18 @@ The table refers to version 0.1.0. Since 0.2.0 the scanner reads folders on APFS
 Totals are identical in both modes. On SMB, NTFS, exFAT and other file systems, and on Windows and Linux, the previous path is used.
 
 View queries on a tree of 7.8M nodes (release): children < 1 ms, treemap 14 ms, filter 54 ms, largest files 0.5 s, breakdown by type 0.7 s (`cargo run --release --example scan -- <path> --queries`).
+
+## Releasing
+
+1. Bump the version in `package.json`, `src-tauri/Cargo.toml` and `src-tauri/tauri.conf.json`, commit, push `main`.
+2. Build everything (the updater key is loaded by `scripts/with-updater-key.sh`): `pnpm build:mac` with the Apple variables above, `pnpm build:windows`, the ARM64 Windows command, `pnpm build:linux`. Notarize and staple the `.dmg`.
+3. Copy the release files into one folder with dots instead of spaces in the names (`Disk.Lens_…`, as GitHub stores them) – the installers plus the updater artifacts and their `.sig` files – and run `node scripts/latest-json.mjs <folder> [notes.txt]`. It verifies every signature against the public key in `tauri.conf.json`, checks that each was signed for this version, and writes `latest.json` (platform keys `darwin-*`, `windows-x86_64|aarch64[-nsis]`, `linux-x86_64|aarch64[-appimage|-deb|-rpm]`).
+4. Tag `vX.Y.Z`, push it, and create the release with all files including `latest.json` and the `.sig` files. The app reads `releases/latest/download/latest.json`, so a draft or pre-release is not offered as an update.
+
+| What | Where |
+|---|---|
+| Updater signing key (minisign) | `~/.tauri/disk-lens.key` (+ `.password`); path in `DISK_LENS_UPDATER_KEY` in `~/.config/local-release/tauri-updater.env`. The public key is `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`. **Losing the private key means existing installs can no longer update.** |
+| Developer ID certificate | login keychain; two certificates share the name, so sign by SHA-1 (`APPLE_SIGNING_IDENTITY`) |
 
 ## Tests and quality
 
@@ -155,6 +172,7 @@ src-tauri/src/
   treemap.rs    squarified layout + binary tile encoding (24 B/tile)
   category.rs   extension → category
   actions.rs    path protection (separate rules for macOS/Linux/Windows), Trash, terminal
+  updater.rs    update check/install (tauri-plugin-updater), startup check, readable errors
   volume.rs     volume list, capacity/free space of the scan's volume, scan vs. usage
   platform.rs   OS-specific metadata: allocated size, device, inode, iCloud
   persist.rs    saving/loading a scan, CSV/JSON export, diff
@@ -162,7 +180,11 @@ src-tauri/src/
 src/
   api.ts        typed command and event calls
   store.ts      UI state (zustand)
-  components/   Toolbar, Breadcrumb, FilterBar, FolderTree, Treemap, Panels, DiskPanel, Volumes, Overlays
+  components/   Toolbar, Breadcrumb, FilterBar, FolderTree, Treemap, Panels, DiskPanel, Volumes, Update, Overlays
+scripts/
+  build-linux.sh        Linux packages in Docker
+  with-updater-key.sh   runs a build with the updater signing key in the environment
+  latest-json.mjs       latest.json for the updater + signature checks (lib/verify-minisign.mjs)
 ```
 
 Each scan has its own tree (`Arc<RwLock<Tree>>`), so a cancelled scan that is still finishing does not corrupt a new one. Progress is emitted every 250 ms (`scan://progress`). The UI refreshes the tree on every event and the treemap less often (every 1.2 s), because the layout is more expensive.

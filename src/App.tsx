@@ -8,6 +8,7 @@ import { DiskPanel } from "./components/DiskPanel";
 import { DiffPanel, SkippedPanel, TopFiles, TypeBreakdownPanel } from "./components/Panels";
 import { Toolbar } from "./components/Toolbar";
 import { Treemap } from "./components/Treemap";
+import { UpdateDialog, useUpdateEvents } from "./components/Update";
 import { chooseAndScan, refreshInfo, rescan, startScan } from "./lib/actions";
 import { formatCount } from "./lib/format";
 import { useStore, type Tab } from "./store";
@@ -128,6 +129,7 @@ function Split({ left, right }: { left: React.ReactNode; right: React.ReactNode 
 export function App() {
   useProgressEvents();
   useShortcuts();
+  useUpdateEvents();
   const info = useStore((s) => s.info);
   const tab = useStore((s) => s.tab);
   const setTab = useStore((s) => s.setTab);
@@ -177,6 +179,7 @@ export function App() {
       )}
       <ContextMenu />
       <ConfirmTrashDialog />
+      <UpdateDialog />
       <Toasts />
     </div>
   );

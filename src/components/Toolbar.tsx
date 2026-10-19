@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { UpdateButton } from "./Update";
 import { useVolumes } from "./Volumes";
 import {
   cancelScan,
@@ -138,6 +139,7 @@ export function Toolbar() {
         >
           ⓘ
         </span>
+        <UpdateButton />
         <Menu label="Plik">
           {(close) => (
             <>
@@ -153,6 +155,10 @@ export function Toolbar() {
               </button>
               <button className="menu-item" disabled={!info} onClick={() => (close(), exportView("json"))}>
                 Eksportuj widok do JSON…
+              </button>
+              <div className="menu-sep" />
+              <button className="menu-item" onClick={() => (close(), useStore.getState().setUpdateDialog("check"))}>
+                Sprawdź aktualizacje…
               </button>
             </>
           )}

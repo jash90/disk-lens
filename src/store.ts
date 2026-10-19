@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { create } from "zustand";
-import { EMPTY_FILTER, type Filter, type Progress, type SizeMode, type SortKey, type TreeInfo, type ViewArgs } from "./api";
+import { EMPTY_FILTER, type Filter, type Progress, type SizeMode, type SortKey, type TreeInfo, type UpdateInfo, type ViewArgs } from "./api";
 import type { ColorMode } from "./lib/colors";
 
 export type Tab = "treemap" | "top" | "types" | "skipped" | "diff" | "disk";
@@ -41,6 +41,10 @@ interface State {
   toasts: Toast[];
   trashTarget: number | null;
   menu: ContextMenuState | null;
+  /** Znaleziona, jeszcze niezainstalowana aktualizacja. */
+  update: UpdateInfo | null;
+  /** Okno aktualizacji: „check” sprawdza serwer po otwarciu, „show” pokazuje znane wydanie. */
+  updateDialog: "check" | "show" | null;
 
   setInfo: (info: TreeInfo | null) => void;
   resetForScan: (info: TreeInfo | null, scanning: boolean) => void;
@@ -61,6 +65,8 @@ interface State {
   dismissToast: (id: number) => void;
   setTrashTarget: (id: number | null) => void;
   openMenu: (m: ContextMenuState | null) => void;
+  setUpdate: (u: UpdateInfo | null) => void;
+  setUpdateDialog: (d: "check" | "show" | null) => void;
 }
 
 let toastSeq = 0;
@@ -86,6 +92,8 @@ export const useStore = create<State>((set, get) => ({
   toasts: [],
   trashTarget: null,
   menu: null,
+  update: null,
+  updateDialog: null,
 
   setInfo: (info) => set({ info }),
   resetForScan: (info, scanning) =>
@@ -124,6 +132,8 @@ export const useStore = create<State>((set, get) => ({
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
   setTrashTarget: (trashTarget) => set({ trashTarget }),
   openMenu: (menu) => set({ menu }),
+  setUpdate: (update) => set({ update }),
+  setUpdateDialog: (updateDialog) => set({ updateDialog }),
 }));
 
 /** Parametry widoku przekazywane do każdego zapytania. */

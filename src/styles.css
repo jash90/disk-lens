@@ -1339,3 +1339,40 @@ table.list .num {
   flex: none;
   height: 4px;
 }
+
+/* ---------- aktualizacje ---------- */
+
+.btn.update-btn {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.update-notes {
+  max-height: 260px;
+  overflow: auto;
+  margin: 10px 0 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  white-space: pre-wrap;
+  line-height: 1.5;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.update-progress {
+  height: 8px;
+  margin: 12px 0 6px;
+  border-radius: 4px;
+  background: var(--bar-bg);
+  overflow: hidden;
+}
+
+.update-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.15s;
+}

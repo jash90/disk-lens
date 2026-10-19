@@ -47,7 +47,7 @@ impl AppState {
         self.tree.read().clone().ok_or_else(|| "Najpierw wybierz folder do skanowania.".to_string())
     }
 
-    fn scanning(&self) -> bool {
+    pub(crate) fn scanning(&self) -> bool {
         self.scan.lock().as_ref().is_some_and(|c| !c.done.load(Relaxed))
     }
 

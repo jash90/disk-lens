@@ -58,6 +58,22 @@ export interface Coverage {
   purgeable: number;
 }
 
+/** Wydanie znalezione przez updater (`latest.json` z GitHub Releases). */
+export interface UpdateInfo {
+  version: string;
+  currentVersion: string;
+  notes: string | null;
+  date: string | null;
+}
+
+export interface UpdateProgress {
+  done: number;
+  /** 0, gdy serwer nie podał długości. */
+  total: number;
+  finished: boolean;
+  error: string | null;
+}
+
 export interface Progress {
   scanId: number;
   files: number;
@@ -247,6 +263,14 @@ export const api = {
   openPrivacySettings: () => invoke<void>("open_privacy_settings"),
   onProgress: (cb: (p: Progress) => void): Promise<UnlistenFn> =>
     listen<Progress>("scan://progress", (e) => cb(e.payload)),
+  checkUpdate: () => invoke<UpdateInfo | null>("check_update"),
+  knownUpdate: () => invoke<UpdateInfo | null>("known_update"),
+  /** Po udanej instalacji aplikacja uruchamia się ponownie – Promise rozwiązuje się tylko przy błędzie. */
+  installUpdate: () => invoke<void>("install_update"),
+  onUpdateStatus: (cb: (u: UpdateInfo | null) => void): Promise<UnlistenFn> =>
+    listen<UpdateInfo | null>("update://status", (e) => cb(e.payload)),
+  onUpdateProgress: (cb: (p: UpdateProgress) => void): Promise<UnlistenFn> =>
+    listen<UpdateProgress>("update://progress", (e) => cb(e.payload)),
 };
 
 /** Komunikat błędu z komendy Tauri (odrzucone Promise niesie string). */

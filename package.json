@@ -10,9 +10,9 @@
     "lint": "eslint src && cd src-tauri && cargo clippy --all-targets -- -D warnings",
     "test": "cd src-tauri && cargo test",
     "tauri": "tauri",
-    "build:debug": "tauri build --debug --features mcp-bridge --config '{\"app\":{\"withGlobalTauri\":true,\"security\":{\"csp\":null}}}'",
-    "build:mac": "tauri build --target universal-apple-darwin --bundles app,dmg",
-    "build:windows": "tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis",
+    "build:debug": "tauri build --debug --features mcp-bridge --config '{\"app\":{\"withGlobalTauri\":true,\"security\":{\"csp\":null}},\"bundle\":{\"createUpdaterArtifacts\":false}}'",
+    "build:mac": "scripts/with-updater-key.sh tauri build --target universal-apple-darwin --bundles app,dmg",
+    "build:windows": "scripts/with-updater-key.sh tauri build --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis",
     "build:linux": "./scripts/build-linux.sh"
   },
   "dependencies": {

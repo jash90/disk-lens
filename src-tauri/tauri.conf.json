@@ -40,6 +40,18 @@
       "deb": {
         "depends": []
       }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhFNTNBRjUxMEU4ODE3NkMKUldSc0Y0Z09VYTlUamhDNWRsN2ZVNnUvUStRaDYzUlczSWxCVTVneUxRV1N3eGZIa3Y4ZDNEN1MK",
+      "endpoints": [
+        "https://github.com/jash90/disk-lens/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

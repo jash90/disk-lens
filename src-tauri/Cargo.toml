@@ -25,6 +25,8 @@ zstd = "0.13"
 csv = "1"
 trash = "5"
 tauri-plugin-clipboard-manager = "2"
+# Aktualizacje z GitHub Releases (latest.json podpisany kluczem minisign, patrz tauri.conf.json).
+tauri-plugin-updater = "2"
 # Most do automatyzacji UI – tylko z funkcją `mcp-bridge` (pnpm build:debug).
 tauri-plugin-mcp-bridge = { version = "0.13", optional = true }
 

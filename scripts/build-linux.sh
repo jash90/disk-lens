@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Buduje paczki Linuxa w Dockerze: ./scripts/build-linux.sh [amd64|arm64]...
-# Wynik: release-artifacts/linux-<arch>/ (deb, rpm, AppImage).
+# Wynik: release-artifacts/linux-<arch>/ (deb, rpm, AppImage + podpisy .sig dla aktualizacji w aplikacji).
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# Klucz podpisujący aktualizacje – bez niego `tauri build` się nie uda (createUpdaterArtifacts).
+[[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]] || exec scripts/with-updater-key.sh "$0" "$@"
 ARCHES=("${@:-amd64 arm64}")
 [ $# -eq 0 ] && ARCHES=(amd64 arm64)
 
@@ -13,6 +15,7 @@ for arch in "${ARCHES[@]}"; do
   mkdir -p "$out"
   # Źródła kopiujemy do kontenera (bez node_modules/target z macOS – mają natywne binarki darwin).
   docker run --rm --platform "linux/$arch" \
+    -e TAURI_SIGNING_PRIVATE_KEY -e TAURI_SIGNING_PRIVATE_KEY_PASSWORD \
     -v "$PWD":/src:ro \
     -v "$PWD/$out":/out \
     -v "disk-lens-cargo-$arch":/usr/local/cargo/registry \
@@ -31,7 +34,7 @@ for arch in "${ARCHES[@]}"; do
       fi
       dd if=/dev/zero of="$plugin" bs=1 seek=8 count=3 conv=notrunc 2>/dev/null
       pnpm tauri build --bundles deb,rpm,appimage
-      find src-tauri/target/release/bundle \( -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" \) -exec cp {} /out/ \;
+      find src-tauri/target/release/bundle \( -name "*.deb" -o -name "*.rpm" -o -name "*.AppImage" -o -name "*.sig" \) -exec cp {} /out/ \;
     '
   ls -la "$out"
 done

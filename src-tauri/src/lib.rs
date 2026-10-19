@@ -8,6 +8,7 @@ pub mod platform;
 pub mod query;
 pub mod scanner;
 pub mod treemap;
+mod updater;
 pub mod volume;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -15,20 +16,14 @@ pub fn run() {
     let builder = tauri::Builder::default();
     // Most MCP do testów UI – tylko z funkcją `mcp-bridge` (pnpm build:debug) i tylko na localhost.
     #[cfg(feature = "mcp-bridge")]
-    let builder = builder
-        .plugin(tauri_plugin_mcp_bridge::Builder::new().bind_address("127.0.0.1").build())
-        .setup(|app| {
-            use tauri::Manager;
-            app.add_capability(
-                r#"{"identifier":"mcp-bridge","windows":["main"],"permissions":["mcp-bridge:default"]}"#,
-            )?;
-            Ok(())
-        });
+    let builder = builder.plugin(tauri_plugin_mcp_bridge::Builder::new().bind_address("127.0.0.1").build());
     builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(commands::AppState::default())
+        .manage(updater::Updates::default())
         .invoke_handler(tauri::generate_handler![
             commands::platform,
             commands::launch_path,
@@ -54,7 +49,22 @@ pub fn run() {
             commands::save_scan,
             commands::load_scan,
             commands::diff_scans,
+            updater::check_update,
+            updater::known_update,
+            updater::install_update,
         ])
+        // Jedno `setup` – kolejne wywołanie zastąpiłoby poprzednie.
+        .setup(|app| {
+            #[cfg(feature = "mcp-bridge")]
+            {
+                use tauri::Manager;
+                app.add_capability(
+                    r#"{"identifier":"mcp-bridge","windows":["main"],"permissions":["mcp-bridge:default"]}"#,
+                )?;
+            }
+            updater::check_on_startup(app.handle());
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("błąd uruchamiania aplikacji");
 }
