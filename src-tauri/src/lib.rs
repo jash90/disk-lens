@@ -1,5 +1,6 @@
 pub mod actions;
 pub mod category;
+pub mod listing;
 mod commands;
 pub mod model;
 pub mod persist;

@@ -4,10 +4,12 @@
 use disk_lens_lib::model::{flags, Kind, Tree, ROOT};
 use disk_lens_lib::scanner::{new_tree, rescan, scan, scan_path, ScanControl, ScanOptions};
 use parking_lot::RwLock;
+use proptest::prelude::*;
+use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::Write;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering::Relaxed;
 use std::time::{Duration, Instant};
 
@@ -218,3 +220,134 @@ fn trash_moves_file_without_finder() {
         fs::remove_file(trashed).unwrap();
     }
 }
+
+type Snapshot = BTreeMap<String, (Kind, u8, u64, u64, i64, u32, u32)>;
+
+/// Drzewo spłaszczone do ścieżka → (rodzaj, flagi, alloc, logical, mtime, pliki, foldery).
+/// Który z twardych dowiązań dostanie HARDLINK_DUP, zależy od kolejności wątków, więc dla plików
+/// z kilkoma dowiązaniami porównujemy tylko rodzaj – sumy folderów i tak muszą się zgadzać.
+fn snapshot(t: &Tree, root: &Path) -> Snapshot {
+    let mut out = BTreeMap::new();
+    let mut stack = vec![(ROOT, String::new())];
+    while let Some((id, p)) = stack.pop() {
+        let n = t.node(id);
+        let linked = fs::symlink_metadata(root.join(p.trim_start_matches('/'))).is_ok_and(|m| !m.is_dir() && m.nlink() > 1);
+        let (alloc, logical) = if linked { (0, 0) } else { (n.alloc, n.logical) };
+        out.insert(p.clone(), (n.kind, n.flags & !flags::HARDLINK_DUP, alloc, logical, n.mtime, n.files, n.dirs));
+        for c in t.children(id) {
+            stack.push((c, format!("{p}/{}", t.name(c))));
+        }
+    }
+    out
+}
+
+fn scan_both(r: &Path) -> (Tree, Tree) {
+    let fast = scan_path(r, &ScanOptions { bulk: true, ..opts() }).unwrap();
+    let slow = scan_path(r, &ScanOptions { bulk: false, ..opts() }).unwrap();
+    (fast, slow)
+}
+
+#[test]
+fn bulk_and_std_listing_build_identical_trees() {
+    let d = tempfile::tempdir().unwrap();
+    let r = d.path();
+    write(&r.join("a/b/c/deep.bin"), 123_456);
+    write(&r.join("a/x.txt"), 10);
+    write(&r.join(".hidden"), 5);
+    write(&r.join("zażółć gęślą jaźń.txt"), 777);
+    fs::create_dir(r.join("empty")).unwrap();
+    write(&r.join("Foo.app/Contents/MacOS/foo"), 40_000);
+    write(&r.join("links/orig.bin"), 90_000);
+    fs::hard_link(r.join("links/orig.bin"), r.join("links/second.bin")).unwrap();
+    std::os::unix::fs::symlink(r.join("a"), r.join("sym-dir")).unwrap();
+    std::os::unix::fs::symlink("/nonexistent/target", r.join("sym-broken")).unwrap();
+    let fifo = std::ffi::CString::new(r.join("pipe").as_os_str().as_encoded_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o644) }, 0);
+    File::create(r.join("sparse.img")).unwrap().set_len(64 * 1024 * 1024).unwrap();
+    // Tyle wpisów, żeby folder nie zmieścił się w jednej paczce getattrlistbulk.
+    for i in 0..5000 {
+        write(&r.join(format!("many/file-with-a-longish-name-{i:05}.dat")), i % 9000);
+    }
+
+    let (fast, slow) = scan_both(r);
+    assert_eq!(fast.node(ROOT).alloc, slow.node(ROOT).alloc);
+    assert_eq!(fast.node(ROOT).logical, slow.node(ROOT).logical);
+    assert_eq!(snapshot(&fast, r), snapshot(&slow, r));
+    assert!(fast.skipped.is_empty() && slow.skipped.is_empty());
+    let kind = |t: &Tree, name: &str| t.node(find(t, ROOT, name)).kind;
+    assert_eq!(kind(&fast, "pipe"), Kind::Other);
+    assert_eq!(kind(&fast, "sym-broken"), Kind::Symlink);
+    assert_eq!(fast.node(find(&fast, ROOT, "many")).files, 5000);
+}
+
+#[test]
+fn bulk_and_std_report_unreadable_dirs_alike() {
+    if unsafe { libc::geteuid() } == 0 {
+        eprintln!("pomijam: root czyta wszystko");
+        return;
+    }
+    let d = tempfile::tempdir().unwrap();
+    let r = d.path();
+    write(&r.join("locked/secret.bin"), 1000);
+    write(&r.join("ok/visible.bin"), 1000);
+    fs::set_permissions(r.join("locked"), fs::Permissions::from_mode(0o000)).unwrap();
+    let (fast, slow) = scan_both(r);
+    fs::set_permissions(r.join("locked"), fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(snapshot(&fast, r), snapshot(&slow, r));
+    let paths = |t: &Tree| t.skipped.iter().map(|s| s.path.clone()).collect::<Vec<_>>();
+    assert_eq!(paths(&fast), paths(&slow));
+}
+
+#[derive(Debug, Clone)]
+enum Item {
+    File(u32),
+    Dir,
+    Symlink,
+}
+
+fn item() -> impl Strategy<Value = (Vec<u8>, Item)> {
+    (
+        prop::collection::vec(0u8..4, 1..4),
+        prop_oneof![
+            6 => (0u32..300_000).prop_map(Item::File),
+            2 => Just(Item::Dir),
+            1 => Just(Item::Symlink),
+        ],
+    )
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 24, ..ProptestConfig::default() })]
+
+    #[test]
+    fn bulk_and_std_agree_on_random_trees(items in prop::collection::vec(item(), 1..40)) {
+        let d = tempfile::tempdir().unwrap();
+        let r = d.path();
+        let mut created = 0;
+        for (parts, it) in &items {
+            let rel: PathBuf = parts.iter().map(|p| format!("n{p}")).collect();
+            let p = r.join(&rel);
+            // Kolizje (plik tam, gdzie już jest folder itp.) po prostu pomijamy. Sprawdzamy tylko
+            // przodków wewnątrz `r` – na macOS sam katalog tymczasowy leży pod symlinkiem /var.
+            let blocked = rel.ancestors().skip(1).filter(|a| !a.as_os_str().is_empty()).any(|a| {
+                let a = r.join(a);
+                a.is_file() || a.is_symlink()
+            });
+            if blocked || p.symlink_metadata().is_ok() {
+                continue;
+            }
+            created += 1;
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            match it {
+                Item::File(n) => write(&p, *n as usize),
+                Item::Dir => fs::create_dir(&p).unwrap(),
+                Item::Symlink => std::os::unix::fs::symlink(r, &p).unwrap(),
+            }
+        }
+        prop_assert!(created > 0);
+        let (fast, slow) = scan_both(r);
+        prop_assert!(fast.len() > created / 2, "drzewo ma {} węzłów przy {} utworzonych", fast.len(), created);
+        prop_assert_eq!(snapshot(&fast, r), snapshot(&slow, r));
+    }
+}
+
