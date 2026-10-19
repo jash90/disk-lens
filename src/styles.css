@@ -233,6 +233,8 @@ kbd {
 .app {
   display: grid;
   grid-template-rows: auto auto 1fr auto;
+  /* Bez tego długa ścieżka w stopce (nowrap) poszerza całą kolumnę poza okno. */
+  grid-template-columns: minmax(0, 1fr);
   height: 100%;
 }
 
@@ -1160,4 +1162,180 @@ table.list .num {
 .volume .bar {
   flex: none;
   height: 8px;
+}
+
+/* ---------- zakładka „Dysk” ---------- */
+
+.volume.current {
+  border-color: var(--accent);
+}
+
+.v-tag {
+  display: inline-block;
+  white-space: nowrap;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.disk h3 {
+  margin-top: 24px;
+}
+
+.disk p {
+  max-width: 720px;
+  line-height: 1.5;
+}
+
+.disk code {
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.disk-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin: 6px 0 12px;
+}
+
+.disk-head h2 {
+  margin: 0 0 2px;
+  font-size: 18px;
+}
+
+.disk-free {
+  font-size: 14px;
+}
+
+.disk-free b {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stack {
+  margin: 4px 0 8px;
+}
+
+.stack-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bar-bg);
+}
+
+.stack-bar .seg {
+  height: 100%;
+}
+
+.stack-bar .seg + .seg {
+  border-left: 2px solid var(--surface);
+}
+
+.seg.used,
+.seg.scanned,
+.swatch.used,
+.swatch.scanned {
+  background: var(--bar);
+}
+
+.seg.purgeable,
+.swatch.purgeable {
+  background: var(--warn);
+}
+
+.seg.unaccounted,
+.swatch.unaccounted {
+  background: var(--map-rest);
+}
+
+.seg.free,
+.swatch.free {
+  background: var(--bar-bg);
+}
+
+.swatch.free {
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.stack-legend {
+  display: grid;
+  grid-template-columns: auto auto auto auto 1fr;
+  gap: 4px 10px;
+  align-items: center;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.stack-legend li {
+  display: contents;
+}
+
+.stack-legend b {
+  text-align: right;
+}
+
+.legend-note {
+  font-size: 12px;
+}
+
+.disk-reasons {
+  margin: 0 0 8px;
+  padding-left: 18px;
+  max-width: 720px;
+  line-height: 1.5;
+}
+
+.disk-reasons li {
+  margin-bottom: 4px;
+}
+
+.disk-reasons li .btn {
+  margin-left: 8px;
+}
+
+.disk .volumes {
+  margin-top: 6px;
+}
+
+.disk-mini {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+  min-width: 150px;
+  margin-left: auto;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.disk-mini:hover {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.disk-mini b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.disk-mini .bar {
+  flex: none;
+  height: 4px;
 }

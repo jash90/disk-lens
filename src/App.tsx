@@ -4,6 +4,7 @@ import { Breadcrumb } from "./components/Breadcrumb";
 import { FilterBar } from "./components/FilterBar";
 import { FolderTree } from "./components/FolderTree";
 import { ConfirmTrashDialog, ContextMenu, DetailsBar, Toasts, Welcome } from "./components/Overlays";
+import { DiskPanel } from "./components/DiskPanel";
 import { DiffPanel, SkippedPanel, TopFiles, TypeBreakdownPanel } from "./components/Panels";
 import { Toolbar } from "./components/Toolbar";
 import { Treemap } from "./components/Treemap";
@@ -17,6 +18,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "types", label: "Wg typu" },
   { id: "skipped", label: "Pominięte" },
   { id: "diff", label: "Porównanie" },
+  { id: "disk", label: "Dysk" },
 ];
 
 function isTyping(e: KeyboardEvent): boolean {
@@ -163,6 +165,7 @@ export function App() {
                   {tab === "types" ? <TypeBreakdownPanel /> : null}
                   {tab === "skipped" ? <SkippedPanel /> : null}
                   {tab === "diff" ? <DiffPanel /> : null}
+                  {tab === "disk" ? <DiskPanel /> : null}
                 </div>
               </div>
             }

@@ -1,6 +1,5 @@
-//! Akcje na plikach: blokady ścieżek systemowych, Kosz, terminal, lista wolumenów – osobno dla każdego systemu.
+//! Akcje na plikach: blokady ścieżek systemowych, Kosz, terminal – osobno dla każdego systemu.
 
-use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -161,95 +160,6 @@ pub fn open_privacy_settings() -> Result<(), String> {
     } else {
         Err("Dostępne tylko na macOS.".into())
     }
-}
-
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct Volume {
-    pub name: String,
-    pub path: String,
-    pub total: u64,
-    pub free: u64,
-}
-
-#[cfg(unix)]
-fn space(path: &Path) -> Option<(u64, u64)> {
-    use std::ffi::CString;
-    use std::os::unix::ffi::OsStrExt;
-    let c = CString::new(path.as_os_str().as_bytes()).ok()?;
-    let mut s: libc::statvfs = unsafe { std::mem::zeroed() };
-    // SAFETY: `c` to poprawny napis zakończony zerem, `s` to zainicjalizowany bufor.
-    if unsafe { libc::statvfs(c.as_ptr(), &mut s) } != 0 {
-        return None;
-    }
-    let frsize = s.f_frsize as u64;
-    Some((s.f_blocks as u64 * frsize, s.f_bavail as u64 * frsize))
-}
-
-#[cfg(windows)]
-fn space(path: &Path) -> Option<(u64, u64)> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
-    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
-    let (mut avail, mut total, mut free) = (0u64, 0u64, 0u64);
-    // SAFETY: `wide` jest zakończone zerem, wskaźniki wskazują na lokalne zmienne.
-    let ok = unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut avail, &mut total, &mut free) };
-    (ok != 0).then_some((total, avail))
-}
-
-pub fn list_volumes() -> Vec<Volume> {
-    let mut out = Vec::new();
-    let mut push = |name: String, path: PathBuf| {
-        if let Some((total, free)) = space(&path) {
-            if total > 0 {
-                out.push(Volume { name, path: path.to_string_lossy().into_owned(), total, free });
-            }
-        }
-    };
-
-    #[cfg(target_os = "macos")]
-    {
-        push("Dysk systemowy (/)".into(), PathBuf::from("/"));
-        if let Ok(rd) = std::fs::read_dir("/Volumes") {
-            for e in rd.flatten() {
-                // „/Volumes/Macintosh HD” to symlink do „/”.
-                if e.file_type().map(|t| t.is_symlink()).unwrap_or(true) {
-                    continue;
-                }
-                push(e.file_name().to_string_lossy().into_owned(), e.path());
-            }
-        }
-    }
-
-    #[cfg(windows)]
-    {
-        // SAFETY: funkcja bez argumentów, zwraca maskę bitową liter dysków.
-        let mask = unsafe { windows_sys::Win32::Storage::FileSystem::GetLogicalDrives() };
-        for i in 0..26u32 {
-            if mask & (1 << i) != 0 {
-                let letter = (b'A' + i as u8) as char;
-                push(format!("Dysk {letter}:"), PathBuf::from(format!("{letter}:\\")));
-            }
-        }
-    }
-
-    #[cfg(not(any(target_os = "macos", windows)))]
-    {
-        push("System plików (/)".into(), PathBuf::from("/"));
-        let mounts = std::fs::read_to_string("/proc/mounts").unwrap_or_default();
-        for line in mounts.lines() {
-            let Some(mp) = line.split_whitespace().nth(1) else { continue };
-            // Ścieżki w /proc/mounts mają spacje zakodowane jako \040.
-            let mp = mp.replace("\\040", " ");
-            let user_mount = ["/media/", "/mnt/", "/run/media/"].iter().any(|p| mp.starts_with(p)) || mp == "/home";
-            if user_mount {
-                let name = mp.rsplit('/').next().unwrap_or(&mp).to_string();
-                push(name, PathBuf::from(&mp));
-            }
-        }
-    }
-
-    out
 }
 
 #[cfg(test)]

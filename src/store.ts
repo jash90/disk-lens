@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { EMPTY_FILTER, type Filter, type Progress, type SizeMode, type SortKey, type TreeInfo, type ViewArgs } from "./api";
 import type { ColorMode } from "./lib/colors";
 
-export type Tab = "treemap" | "top" | "types" | "skipped" | "diff";
+export type Tab = "treemap" | "top" | "types" | "skipped" | "diff" | "disk";
 export type SelectSource = "tree" | "map" | "other";
 
 export interface Toast {

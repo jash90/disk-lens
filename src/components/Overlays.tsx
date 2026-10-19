@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { api, errorMessage, type NodeInfo, type TrashCheck, type Volume } from "../api";
+import { api, errorMessage, type NodeInfo, type TrashCheck } from "../api";
 import { chooseAndScan, confirmTrash, copyPath, openTerminal, rescan, reveal, startScan } from "../lib/actions";
 import { filesLabel, foldersLabel, formatBytes, formatCount, formatDate, middleEllipsis } from "../lib/format";
 import { useStore, useViewArgs } from "../store";
 import { REVEAL_LABEL, shortcut } from "../lib/platform";
+import { DiskMini } from "./DiskPanel";
+import { useVolumes, VolumeTile } from "./Volumes";
 
 export function ContextMenu() {
   const menu = useStore((s) => s.menu);
@@ -155,10 +157,7 @@ export function Toasts() {
 }
 
 export function Welcome() {
-  const [volumes, setVolumes] = useState<Volume[]>([]);
-  useEffect(() => {
-    api.listVolumes().then(setVolumes).catch(() => setVolumes([]));
-  }, []);
+  const volumes = useVolumes();
   return (
     <div className="welcome">
       <h1>Co zajmuje miejsce na dysku?</h1>
@@ -170,20 +169,9 @@ export function Welcome() {
         Wybierz folder… <kbd>{shortcut("O")}</kbd>
       </button>
       <div className="volumes">
-        {volumes.map((v) => {
-          const used = v.total - v.free;
-          return (
-            <button key={v.path} className="volume" onClick={() => startScan(v.path, false)}>
-              <span className="v-name">{v.name}</span>
-              <span className="bar">
-                <span className="fill" style={{ width: `${v.total ? (used / v.total) * 100 : 0}%` }} />
-              </span>
-              <span className="muted">
-                {formatBytes(used)} zajęte z {formatBytes(v.total)} · wolne {formatBytes(v.free)}
-              </span>
-            </button>
-          );
-        })}
+        {volumes.map((v) => (
+          <VolumeTile key={v.path} volume={v} onClick={() => startScan(v.path, false)} />
+        ))}
       </div>
     </div>
   );
@@ -220,6 +208,7 @@ export function DetailsBar() {
             {info.skipped ? ` · ${formatCount(info.skipped)} pominiętych` : ""}
           </span>
         ) : null}
+        <DiskMini />
       </footer>
     );
   }
@@ -253,6 +242,7 @@ export function DetailsBar() {
           Do Kosza…
         </button>
       </div>
+      <DiskMini />
     </footer>
   );
 }

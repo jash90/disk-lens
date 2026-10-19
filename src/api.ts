@@ -39,6 +39,25 @@ export interface Volume {
   free: number;
 }
 
+/** Wolumen, na którym leży skan. */
+export interface VolumeInfo {
+  name: string;
+  mountPath: string;
+  fsType: string;
+  total: number;
+  free: number;
+  /** macOS: wolne razem z miejscem, które system odzyska sam (tak liczy Finder). */
+  availableImportant: number | null;
+}
+
+export interface Coverage {
+  used: number;
+  scanned: number;
+  unaccounted: number;
+  overcounted: number;
+  purgeable: number;
+}
+
 export interface Progress {
   scanId: number;
   files: number;
@@ -62,6 +81,8 @@ export interface TreeInfo {
   skipped: number;
   scannedAt: number;
   nodes: number;
+  volume: VolumeInfo | null;
+  coverage: Coverage | null;
 }
 
 export interface Row {

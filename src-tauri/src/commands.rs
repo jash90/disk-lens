@@ -8,6 +8,7 @@ use crate::persist;
 use crate::query::{self, compute_filtered, Filter, FilteredSums, SortKey, View};
 use crate::scanner::{self, ScanControl, ScanOptions};
 use crate::treemap;
+use crate::volume::{self, Coverage, VolumeInfo};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -36,6 +37,9 @@ pub struct AppState {
     scan: Mutex<Option<Arc<ScanControl>>>,
     scan_seq: AtomicU64,
     cache: Mutex<Option<CachedSums>>,
+    /// Ostatnie dane wolumenu (korzeń skanu, dane) – w trakcie skanu `tree_info` woła się co 250 ms,
+    /// a odczyt miejsca do odzyskania na macOS bywa wolny, więc wtedy używamy tej kopii.
+    volume: Mutex<Option<(PathBuf, Option<VolumeInfo>)>>,
 }
 
 impl AppState {
@@ -144,8 +148,8 @@ pub async fn launch_path() -> Option<String> {
 }
 
 #[tauri::command]
-pub async fn list_volumes() -> Vec<actions::Volume> {
-    actions::list_volumes()
+pub async fn list_volumes() -> Vec<volume::Volume> {
+    volume::list_volumes()
 }
 
 #[tauri::command]
@@ -206,17 +210,33 @@ pub struct TreeInfo {
     skipped: usize,
     scanned_at: i64,
     nodes: usize,
+    /// Wolumen korzenia skanu (`None`, gdy ścieżki już nie ma, np. wczytany skan z innego dysku).
+    volume: Option<VolumeInfo>,
+    coverage: Option<Coverage>,
 }
 
 #[tauri::command]
 pub async fn tree_info(state: State<'_, AppState>) -> Res<Option<TreeInfo>> {
     let Some((seq, shared)) = state.tree.read().clone() else { return Ok(None) };
+    let scanning = state.scanning();
+    let root_path = shared.read().root_path.clone();
+    let vol = {
+        let mut cached = state.volume.lock();
+        match cached.as_ref() {
+            Some((p, v)) if scanning && *p == root_path => v.clone(),
+            _ => {
+                let v = volume::volume_for(&root_path);
+                *cached = Some((root_path, v.clone()));
+                v
+            }
+        }
+    };
     let t = shared.read();
     let root = t.node(ROOT);
     Ok(Some(TreeInfo {
         scan_id: seq,
         root_path: t.root_path.to_string_lossy().into_owned(),
-        scanning: state.scanning(),
+        scanning,
         alloc: root.alloc,
         logical: root.logical,
         files: root.files,
@@ -224,6 +244,8 @@ pub async fn tree_info(state: State<'_, AppState>) -> Res<Option<TreeInfo>> {
         skipped: t.skipped.len(),
         scanned_at: t.scanned_at,
         nodes: t.len(),
+        coverage: vol.as_ref().map(|v| volume::coverage(v, root.alloc)),
+        volume: vol,
     }))
 }
 

@@ -8,6 +8,7 @@ pub mod platform;
 pub mod query;
 pub mod scanner;
 pub mod treemap;
+pub mod volume;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

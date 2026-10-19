@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, type Volume } from "../api";
+import { useVolumes } from "./Volumes";
 import {
   cancelScan,
   chooseAndScan,
@@ -40,11 +40,7 @@ export function Toolbar() {
   const mode = useStore((s) => s.mode);
   const setMode = useStore((s) => s.setMode);
   const [cross, setCross] = useState(false);
-  const [volumes, setVolumes] = useState<Volume[]>([]);
-
-  useEffect(() => {
-    api.listVolumes().then(setVolumes).catch(() => setVolumes([]));
-  }, []);
+  const volumes = useVolumes();
 
   return (
     <header className="toolbar">
