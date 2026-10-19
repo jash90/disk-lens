@@ -1,6 +1,6 @@
 [package]
 name = "disk-lens"
-version = "0.2.0"
+version = "0.3.0"
 description = "Analizator zajętości dysku: treemapa + drzewo folderów"
 authors = ["Bartłomiej Zimny"]
 edition = "2021"
