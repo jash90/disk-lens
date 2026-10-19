@@ -8,7 +8,7 @@ Analizator zajętości dysku dla macOS, Windows i Linuxa w stylu GrandPerspectiv
 - **drzewo folderów**: sumy, procent rodzica, liczba plików i folderów, sortowanie po każdej kolumnie.
 
 Do tego dochodzą:
-- zakładki: największe pliki, podział wg typu, pominięte ścieżki, porównanie dwóch skanów;
+- zakładki: największe pliki, podział wg typu, pominięte ścieżki, porównanie dwóch skanów, dysk (pojemność, wolne miejsce, zestawienie skanu z zajętością dysku);
 - filtry: nazwa, minimalny rozmiar, rozszerzenia, wykluczenia; działają bez ponownego skanu;
 - akcje: pokaż w menedżerze plików (Finder / Eksplorator), kopiowanie ścieżki, terminal, ponowny skan folderu, przeniesienie do Kosza;
 - eksport do CSV/JSON oraz zapis i odczyt skanu w pliku `.disklens`.
@@ -25,9 +25,10 @@ Pobierz paczkę dla swojego systemu z [Releases](../../releases):
 | Linux x86_64 | `.AppImage`, `.deb` (Debian/Ubuntu) lub `.rpm` (Fedora/openSUSE), `amd64`/`x86_64` |
 | Linux ARM64 | jak wyżej, `arm64`/`aarch64` |
 
-Paczki nie są podpisane certyfikatem producenta:
+- **macOS:** od wersji 0.2.0 aplikacja jest podpisana certyfikatem Developer ID i notaryzowana przez Apple, więc otwiera się bez ostrzeżeń. Żeby skanować chronione foldery (Poczta, Wiadomości, kontenery aplikacji), nadaj Disk Lens **Pełny dostęp do dysku** w Ustawieniach → Prywatność i ochrona.
 
-- **macOS** zablokuje pierwsze uruchomienie. Otwórz aplikację przez prawy klik → **Otwórz** albo zdejmij kwarantannę: `xattr -dr com.apple.quarantine "/Applications/Disk Lens.app"`. Żeby skanować chronione foldery (Poczta, Wiadomości, kontenery aplikacji), nadaj Disk Lens **Pełny dostęp do dysku** w Ustawieniach → Prywatność i ochrona.
+Paczki na Windows i Linuxa nie są podpisane certyfikatem producenta:
+
 - **Windows** SmartScreen pokaże ostrzeżenie: **Więcej informacji → Uruchom mimo to**. Aplikacja używa WebView2 (instalator doinstaluje go, jeśli go brakuje).
 - **Linux:** AppImage wystarczy oznaczyć jako wykonywalny (`chmod +x`). Paczki `.deb`/`.rpm` wymagają WebKitGTK 4.1.
 
@@ -78,6 +79,8 @@ Pomiar 2026-10-10 na MacBooku (10 rdzeni, APFS na SSD), rozgrzany cache metadany
 - **GrandPerspective:** świeży start z wyłączonym App Nap, czas od przekazania folderu do pojawienia się okna wyniku (dokładność ±0,1 s, zawiera rysowanie okna). Mediana z 3 przebiegów, dla dużego 1 przebieg.
 - **Zgodność wyników:** suma Disk Lens = `du -sk` co do KiB (mały i średni folder). gdu pokazuje o ~1,2% mniej (inaczej liczy foldery i twarde dowiązania).
 - **WinDirStat:** pominięty, bo działa tylko na Windows, a porównywanie czasów z innego komputera nic by nie mówiło.
+
+Tabela dotyczy wersji 0.1.0. Od 0.2.0 skaner na APFS i HFS+ czyta foldery przez `getattrlistbulk` (nazwy i metadane paczkami zamiast `lstat` na każdy plik). Pomiar 2026-10-19 na tym samym Macu, rozgrzany cache, `examples/scan` z `--no-bulk` i bez: folder z 8,7 mln wpisów 66,5 s → 36,4 s, cały katalog domowy (16,4 mln) ~121 s → ~80 s, sumy identyczne. Na SMB, NTFS, exFAT i innych systemach plików zostaje dotychczasowa ścieżka.
 
 Zapytania widoku na drzewie 7,8 mln węzłów (release): dzieci < 1 ms, treemapa 14 ms, filtr 54 ms, największe pliki 0,5 s, podział wg typu 0,7 s (`cargo run --release --example scan -- <ścieżka> --queries`).
 
