@@ -25,10 +25,12 @@ zstd = "0.13"
 csv = "1"
 trash = "5"
 tauri-plugin-clipboard-manager = "2"
-# Aktualizacje z GitHub Releases (latest.json podpisany kluczem minisign, patrz tauri.conf.json).
-tauri-plugin-updater = "2"
 # Most do automatyzacji UI – tylko z funkcją `mcp-bridge` (pnpm build:debug).
 tauri-plugin-mcp-bridge = { version = "0.13", optional = true }
+
+# Aktualizacje z GitHub Releases (latest.json podpisany kluczem minisign, patrz tauri.conf.json).
+[target.'cfg(not(windows))'.dependencies]
+tauri-plugin-updater = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
@@ -39,6 +41,9 @@ objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSDictionary", "NSError", "NSString", "NSURL", "NSValue"] }
 
 [target.'cfg(windows)'.dependencies]
+# TLS systemowy (schannel) zamiast rustls – `ring` z rustls nie kompiluje się krzyżowo
+# na aarch64-pc-windows-msvc przez cargo-xwin, a schannel korzysta z magazynu certyfikatów systemu.
+tauri-plugin-updater = { version = "2", default-features = false, features = ["native-tls", "system-proxy", "zip"] }
 windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }
 
 [features]
