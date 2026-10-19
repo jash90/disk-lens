@@ -1,152 +1,168 @@
 # Disk Lens
 
-![Treemapa z zaznaczeniem zsynchronizowanym z drzewem folderów](docs/screenshots/treemapa.jpg)
+![Treemap with the selection synced to the folder tree](docs/screenshots/treemapa.jpg)
 
-Analizator zajętości dysku dla macOS, Windows i Linuxa w stylu GrandPerspective / WinDirStat. Pokazuje te same dane na dwa sposoby:
+A disk usage analyzer for macOS, Windows and Linux in the spirit of GrandPerspective / WinDirStat. It shows the same data in two ways:
 
-- **treemapa**: każdy plik to prostokąt o polu proporcjonalnym do rozmiaru (algorytm squarified, Canvas);
-- **drzewo folderów**: sumy, procent rodzica, liczba plików i folderów, sortowanie po każdej kolumnie.
+- **treemap**: every file is a rectangle whose area is proportional to its size (squarified algorithm, Canvas);
+- **folder tree**: totals, percentage of the parent, file and folder counts, sortable by every column.
 
-Do tego dochodzą:
-- zakładki: największe pliki, podział wg typu, pominięte ścieżki, porównanie dwóch skanów, dysk (pojemność, wolne miejsce, zestawienie skanu z zajętością dysku);
-- filtry: nazwa, minimalny rozmiar, rozszerzenia, wykluczenia; działają bez ponownego skanu;
-- akcje: pokaż w menedżerze plików (Finder / Eksplorator), kopiowanie ścieżki, terminal, ponowny skan folderu, przeniesienie do Kosza;
-- eksport do CSV/JSON oraz zapis i odczyt skanu w pliku `.disklens`.
+On top of that:
+- tabs: largest files, breakdown by type, skipped paths, comparison of two scans, disk (capacity, free space, scan vs. disk usage);
+- filters: name, minimum size, extensions, exclusions; applied without rescanning;
+- actions: reveal in the file manager (Finder / Explorer), copy path, open a terminal, rescan a folder, move to Trash;
+- export to CSV/JSON, and saving/loading a scan as a `.disklens` file.
 
-## Instalacja
+The app's interface is in Polish. Below, UI labels are quoted as they appear in the app, with an English translation.
 
-Pobierz paczkę dla swojego systemu z [Releases](../../releases):
+## Installation
 
-| System | Plik |
+Download the package for your system from [Releases](../../releases):
+
+| System | File |
 |---|---|
-| macOS 11+ (Apple Silicon i Intel) | `Disk.Lens_<wersja>_universal.dmg` |
-| Windows 10/11 x64 | `Disk.Lens_<wersja>_x64-setup.exe` |
-| Windows 11 ARM64 | `Disk.Lens_<wersja>_arm64-setup.exe` |
-| Linux x86_64 | `.AppImage`, `.deb` (Debian/Ubuntu) lub `.rpm` (Fedora/openSUSE), `amd64`/`x86_64` |
-| Linux ARM64 | jak wyżej, `arm64`/`aarch64` |
+| macOS 11+ (Apple Silicon and Intel) | `Disk.Lens_<version>_universal.dmg` |
+| Windows 10/11 x64 | `Disk.Lens_<version>_x64-setup.exe` |
+| Windows 11 ARM64 | `Disk.Lens_<version>_arm64-setup.exe` |
+| Linux x86_64 | `.AppImage`, `.deb` (Debian/Ubuntu) or `.rpm` (Fedora/openSUSE), `amd64`/`x86_64` |
+| Linux ARM64 | as above, `arm64`/`aarch64` |
 
-- **macOS:** od wersji 0.2.0 aplikacja jest podpisana certyfikatem Developer ID i notaryzowana przez Apple, więc otwiera się bez ostrzeżeń. Żeby skanować chronione foldery (Poczta, Wiadomości, kontenery aplikacji), nadaj Disk Lens **Pełny dostęp do dysku** w Ustawieniach → Prywatność i ochrona.
+- **macOS:** since 0.2.0 the app is signed with a Developer ID certificate and notarized by Apple, so it opens without warnings. To scan protected folders (Mail, Messages, app containers), grant Disk Lens **Full Disk Access** in System Settings → Privacy & Security.
 
-Paczki na Windows i Linuxa nie są podpisane certyfikatem producenta:
+The Windows and Linux packages are not code-signed:
 
-- **Windows** SmartScreen pokaże ostrzeżenie: **Więcej informacji → Uruchom mimo to**. Aplikacja używa WebView2 (instalator doinstaluje go, jeśli go brakuje).
-- **Linux:** AppImage wystarczy oznaczyć jako wykonywalny (`chmod +x`). Paczki `.deb`/`.rpm` wymagają WebKitGTK 4.1.
+- **Windows:** SmartScreen shows a warning; choose **More info → Run anyway**. The app uses WebView2 (the installer adds it if it is missing).
+- **Linux:** an AppImage only needs to be made executable (`chmod +x`). The `.deb`/`.rpm` packages require WebKitGTK 4.1.
 
-Stos: Tauri 2 + Rust (skaner, zapytania, layout treemapy), React 19 + TypeScript + Vite (UI), pnpm.
+Stack: Tauri 2 + Rust (scanner, queries, treemap layout), React 19 + TypeScript + Vite (UI), pnpm.
 
-## Uruchomienie
+## Running
 
 ```bash
 pnpm install
-pnpm tauri dev              # tryb deweloperski
-pnpm build:debug            # build debug z mostem MCP do automatyzacji UI (bez CSP)
+pnpm tauri dev              # development mode
+pnpm build:debug            # debug build with the MCP bridge for UI automation (no CSP)
 ```
 
-Wszystkie paczki da się zbudować lokalnie na Macu:
+All packages can be built locally on a Mac:
 
 ```bash
-pnpm build:mac              # universal .app + .dmg (wymaga targetów aarch64- i x86_64-apple-darwin)
-pnpm build:windows          # instalator NSIS x64 – cross-compile przez cargo-xwin (brew install nsis llvm)
-pnpm build:linux            # deb, rpm, AppImage dla amd64 i arm64 w Dockerze → release-artifacts/
+pnpm build:mac              # universal .app + .dmg (needs the aarch64- and x86_64-apple-darwin targets)
+pnpm build:windows          # x64 NSIS installer, cross-compiled with cargo-xwin (brew install nsis llvm)
+pnpm build:linux            # deb, rpm, AppImage for amd64 and arm64 in Docker → release-artifacts/
 ```
 
-Dla Windows ARM64: `pnpm tauri build --runner cargo-xwin --target aarch64-pc-windows-msvc --bundles nsis`. Przy cross-compile `llvm-rc` i `lld-link` muszą być w `PATH` (`export PATH="$(brew --prefix llvm)/bin:$PATH"`).
+For Windows ARM64: `pnpm tauri build --runner cargo-xwin --target aarch64-pc-windows-msvc --bundles nsis`. When cross-compiling, `llvm-rc` and `lld-link` must be on `PATH` (`export PATH="$(brew --prefix llvm)/bin:$PATH"`).
 
-Folder do przeskanowania można podać w argumentach uruchomienia: `disk-lens <folder>`.
+To sign and notarize the macOS build, set `APPLE_SIGNING_IDENTITY` (Developer ID Application certificate), `APPLE_ID`, `APPLE_PASSWORD` (app-specific password) and `APPLE_TEAM_ID` before `pnpm build:mac`. Tauri signs, notarizes and staples the `.app` and signs the `.dmg`; notarize the `.dmg` itself with `xcrun notarytool submit … --wait` and `xcrun stapler staple`.
 
-Sprawdzenie skanera z wiersza poleceń (porównywalne z `du -sk`):
+A folder to scan can be passed as a launch argument: `disk-lens <folder>`.
+
+Checking the scanner from the command line (comparable with `du -sk`):
 
 ```bash
 cd src-tauri && cargo run --release --example scan -- <folder>
 ```
 
-| Kolorowanie wg wieku plików | Podział wg typu |
+| Coloring by file age | Breakdown by type |
 |---|---|
-| ![Treemapa kolorowana wg wieku](docs/screenshots/wiek.jpg) | ![Podział wg kategorii i rozszerzeń](docs/screenshots/wg-typu.jpg) |
+| ![Treemap colored by file age](docs/screenshots/wiek.jpg) | ![Breakdown by category and extension](docs/screenshots/wg-typu.jpg) |
 
-## Wydajność
+## Performance
 
-Pomiar 2026-10-10 na MacBooku (10 rdzeni, APFS na SSD), rozgrzany cache metadanych. Maszyna była obciążona innymi procesami (load average 17–100), więc czasy bezwzględne są zawyżone. Wszystkie narzędzia mierzone były na tych samych trzech folderach (mały, średni, duży), jedno po drugim.
+Measured on 2026-10-10 on a MacBook (10 cores, APFS on SSD) with a warm metadata cache. The machine was busy with other processes (load average 17–100), so absolute times are inflated. Every tool was measured on the same three folders (small, medium, large), one after another.
 
-| Folder | Plików | **Disk Lens** | GrandPerspective 2.6.3 | gdu 5.38 | du (BSD) |
+| Folder | Files | **Disk Lens** | GrandPerspective 2.6.3 | gdu 5.38 | du (BSD) |
 |---|---|---|---|---|---|
-| mały | 34 tys. | **0,10 s** | 1,22 s | 0,09 s | 0,17 s |
-| średni | 366 tys. | **3,2 s** | 24,5 s | 3,9 s | 4,0 s |
-| duży | 6,9 mln | **1,1 min**, 393 MB | 7,1 min, 891 MB | 1,5 min, 132 MB | 3,2 min |
+| small | 34k | **0.10 s** | 1.22 s | 0.09 s | 0.17 s |
+| medium | 366k | **3.2 s** | 24.5 s | 3.9 s | 4.0 s |
+| large | 6.9M | **1.1 min**, 393 MB | 7.1 min, 891 MB | 1.5 min, 132 MB | 3.2 min |
 
-- **Disk Lens:** CLI `examples/scan` (ten sam skaner co w aplikacji), hyperfine, 5 przebiegów (3 dla dużego).
-- **gdu i du:** hyperfine `-n -p -s -x` / `-skx`, liczba przebiegów jak wyżej (du na dużym: 1).
-- **GrandPerspective:** świeży start z wyłączonym App Nap, czas od przekazania folderu do pojawienia się okna wyniku (dokładność ±0,1 s, zawiera rysowanie okna). Mediana z 3 przebiegów, dla dużego 1 przebieg.
-- **Zgodność wyników:** suma Disk Lens = `du -sk` co do KiB (mały i średni folder). gdu pokazuje o ~1,2% mniej (inaczej liczy foldery i twarde dowiązania).
-- **WinDirStat:** pominięty, bo działa tylko na Windows, a porównywanie czasów z innego komputera nic by nie mówiło.
+- **Disk Lens:** the `examples/scan` CLI (the same scanner as in the app), hyperfine, 5 runs (3 for the large folder).
+- **gdu and du:** hyperfine `-n -p -s -x` / `-skx`, number of runs as above (du on the large folder: 1).
+- **GrandPerspective:** fresh start with App Nap disabled, time from handing over the folder to the result window appearing (±0.1 s accuracy, includes drawing the window). Median of 3 runs, 1 run for the large folder.
+- **Result agreement:** Disk Lens total = `du -sk` to the KiB (small and medium folder). gdu reports ~1.2% less (it counts folders and hard links differently).
+- **WinDirStat:** skipped, because it only runs on Windows, and comparing times from another computer would say nothing.
 
-Tabela dotyczy wersji 0.1.0. Od 0.2.0 skaner na APFS i HFS+ czyta foldery przez `getattrlistbulk` (nazwy i metadane paczkami zamiast `lstat` na każdy plik). Pomiar 2026-10-19 na tym samym Macu, rozgrzany cache, `examples/scan` z `--no-bulk` i bez: folder z 8,7 mln wpisów 66,5 s → 36,4 s, cały katalog domowy (16,4 mln) ~121 s → ~80 s, sumy identyczne. Na SMB, NTFS, exFAT i innych systemach plików zostaje dotychczasowa ścieżka.
+The table refers to version 0.1.0. Since 0.2.0 the scanner reads folders on APFS and HFS+ with `getattrlistbulk` (names and metadata in batches instead of one `lstat` per file). Measured on 2026-10-19 on the same Mac, warm cache, `examples/scan` with and without `--no-bulk`:
 
-Zapytania widoku na drzewie 7,8 mln węzłów (release): dzieci < 1 ms, treemapa 14 ms, filtr 54 ms, największe pliki 0,5 s, podział wg typu 0,7 s (`cargo run --release --example scan -- <ścieżka> --queries`).
+| Tree | Entries | 0.1.0 path (`read_dir` + `lstat`) | 0.2.0 (`getattrlistbulk`) | Speed-up |
+|---|---|---|---|---|
+| `~/Projects` | 8.7M | 66.5 s / 67.1 s | 36.6 s / 36.2 s | 1.83× |
+| whole home folder | 16.4M | ~121 s | 78–81 s | ~1.55× |
 
-## Testy i jakość
+Totals are identical in both modes. On SMB, NTFS, exFAT and other file systems, and on Windows and Linux, the previous path is used.
+
+View queries on a tree of 7.8M nodes (release): children < 1 ms, treemap 14 ms, filter 54 ms, largest files 0.5 s, breakdown by type 0.7 s (`cargo run --release --example scan -- <path> --queries`).
+
+## Tests and quality
 
 ```bash
-pnpm test        # cargo test: model, filtry, treemapa (proptest), zapis/diff, skaner na tempdir
+pnpm test        # cargo test: model, filters, treemap (proptest), save/diff, scanner on a tempdir, volumes
 pnpm typecheck   # tsc
 pnpm lint        # eslint + cargo clippy -D warnings
 ```
 
-Testy skanera (Unix) tworzą drzewo fikstur w katalogu tymczasowym i sprawdzają:
-- sumy folderów;
-- liczenie twardych dowiązań jeden raz;
-- to, że symlinki nie są śledzone;
-- folder `chmod 000` (pominięty, skan idzie dalej);
-- plik rzadki (rozmiar logiczny > zajęty);
-- pakiet `.app` jako jeden węzeł;
-- anulowanie i ponowny skan poddrzewa;
-- zgodność sumy z `du -sk`.
+The scanner tests (Unix) build a fixture tree in a temporary directory and check:
+- folder totals;
+- hard links counted once;
+- symlinks not being followed;
+- a `chmod 000` folder (skipped, the scan continues);
+- a sparse file (logical size > allocated);
+- an `.app` package as a single node;
+- cancellation and rescanning a subtree;
+- the total matching `du -sk`;
+- on macOS, `getattrlistbulk` and `read_dir` + `lstat` building identical trees (edge-case fixture, unreadable folders, and a proptest on random trees).
 
-## Decyzje domyślne
+## Default decisions
 
-| Kwestia | Decyzja |
+| Topic | Decision |
 |---|---|
-| Rozmiar | Domyślnie **zajęte na dysku** (macOS/Linux: `st_blocks × 512`, jak `du`; Windows: rozmiar zaokrąglony do klastra 4 KiB). Przełącznik „Logiczny” pokazuje rozmiar pliku. |
-| Jednostki | System dziesiętny (1 KB = 1000 B), jak w Finderze. |
-| Własne bloki folderu | Wliczane do sumy folderu (zgodność z `du`). |
-| Twarde dowiązania | macOS/Linux: liczone raz (deduplikacja po `dev + inode` dla plików z `nlink > 1`), kolejne kopie mają rozmiar 0 i ikonę 🔗. Windows: bez deduplikacji. |
-| Symlinki | Nie są śledzone; liczy się tylko sam link. |
-| Inne wolumeny | macOS/Linux: domyślnie nie wchodzimy do punktów montowania (ikona ⛁), opcja „Inne wolumeny” to zmienia. Windows: punkty montowania i junctiony to reparse pointy, które (jak symlinki) nie są śledzone. |
-| Skan „/” na macOS | Dane z wolumenu Data są liczone przez firmlinki (`/Users`, `/Applications`…), a `/System/Volumes/Data` jest pomijany, żeby nic nie liczyć dwa razy. |
-| Pakiety | `.app`, `.photoslibrary`, `.framework` itd. są skanowane w całości, ale pokazywane jako jeden kafel/wiersz. Dwuklik lub „Wejdź do środka pakietu” otwiera zawartość. |
-| iCloud | Placeholdery (`SF_DATALESS`) są tylko oznaczane ☁, nigdy pobierane. |
-| Brak uprawnień | Skan trwa dalej; ścieżki trafiają do zakładki „Pominięte” z podpowiedzią o Pełnym dostępie do dysku. |
-| Kosz | Tylko przeniesienie do Kosza, nigdy trwałe usunięcie, zawsze z potwierdzeniem. Na macOS przez `NSFileManager.trashItemAtURL` (bez AppleScriptu, więc bez pytania o sterowanie Finderem); minus: Finder nie oferuje „Odłóż z powrotem”. Na Windows trafia do Kosza systemowego, na Linuxie do kosza freedesktop. Zawsze zablokowane: korzeń skanu, korzeń dysku, katalog domowy i folder kont użytkowników jako całość. Dodatkowo per system (`src-tauri/src/actions.rs`): macOS – `/System`, `/usr` (poza `/usr/local`), `/bin`, `/sbin`, `/private` (poza tmp); Linux – `/usr`, `/etc`, `/boot`, `/var/lib`, `/proc`, `/sys`…; Windows – `C:\Windows`, `C:\Program Files`, `C:\ProgramData`, `$Recycle.Bin`…. |
-| Kosz i reskan w trakcie skanu | Zablokowane, bo skaner dopisywałby wyniki do odpiętych węzłów. |
-| Treemapa | Do 50 000 kafli, układ BFS (budżet rozkłada się równo po poziomach). Elementy mniejsze niż 1 px² są sklejane w szare „drobne”. Odstęp 1 px w folderach pokazuje strukturę. |
-| Filtry | Liczone jednym przebiegiem O(n) po arenie i cache'owane per (filtr, skan, generacja drzewa). Nazwa, rozmiar i rozszerzenie dotyczą plików; wykluczenia pomijają pliki i całe foldery o danej nazwie. |
-| Porównanie skanów | Dopasowanie po ścieżkach względnych od korzenia; lista 1000 największych zmian. |
-| Format `.disklens` | Nagłówek `DLENS` + postcard + zstd. Plik nie jest stabilnym formatem wymiany między wersjami. |
+| Size | **Allocated on disk** by default (macOS/Linux: `st_blocks × 512`, like `du`; Windows: size rounded up to a 4 KiB cluster). The **Logiczny** (Logical) toggle shows the file size instead. |
+| Units | Decimal (1 KB = 1000 B), as in Finder. |
+| A folder's own blocks | Included in the folder total (matches `du`). |
+| Hard links | macOS/Linux: counted once (deduplicated by `dev + inode` for files with `nlink > 1`); further copies have size 0 and a 🔗 icon. Windows: no deduplication. |
+| Symlinks | Not followed; only the link itself is counted. |
+| Other volumes | macOS/Linux: mount points are not entered by default (⛁ icon); the **Inne wolumeny** (Other volumes) option changes that. Windows: mount points and junctions are reparse points, which (like symlinks) are not followed. |
+| Scanning "/" on macOS | Data on the Data volume is counted through firmlinks (`/Users`, `/Applications`…), and `/System/Volumes/Data` is skipped so nothing is counted twice. |
+| Reading folders | macOS on APFS/HFS+: `getattrlistbulk` (one call returns a batch of entries with their metadata). Elsewhere: `read_dir` + `lstat`. Each folder is read to the end before its subfolders are queued, so no directory iterations are nested. |
+| Packages | `.app`, `.photoslibrary`, `.framework` etc. are scanned in full but shown as a single tile/row. Double-click or **Wejdź do środka pakietu** (Show package contents) opens them. |
+| iCloud | Placeholders (`SF_DATALESS`) are only marked ☁, never downloaded. |
+| Missing permissions | The scan continues; the paths go to the **Pominięte** (Skipped) tab with a hint about Full Disk Access. |
+| Disk tab | Capacity and free space of the volume the scan root is on (`statvfs` / `GetDiskFreeSpaceExW`; on macOS also the space available for important usage, which is what Finder shows). "Scanned vs. used" lists what the rest is made of: folders outside the scan, skipped paths, other APFS volumes in the container, snapshots, system files. |
+| Trash | Only moving to the Trash, never permanent deletion, always with confirmation. On macOS via `NSFileManager.trashItemAtURL` (no AppleScript, so no prompt to control Finder); downside: Finder does not offer "Put Back". On Windows it goes to the Recycle Bin, on Linux to the freedesktop trash. Always blocked: the scan root, the disk root, the home folder and the users folder as a whole. Additionally per system (`src-tauri/src/actions.rs`): macOS – `/System`, `/usr` (except `/usr/local`), `/bin`, `/sbin`, `/private` (except tmp); Linux – `/usr`, `/etc`, `/boot`, `/var/lib`, `/proc`, `/sys`…; Windows – `C:\Windows`, `C:\Program Files`, `C:\ProgramData`, `$Recycle.Bin`…. |
+| Trash and rescan during a scan | Blocked, because the scanner would keep writing results into detached nodes. |
+| Treemap | Up to 50,000 tiles, BFS layout (the budget is spread evenly across levels). Items smaller than 1 px² are merged into grey "small items". A 1 px gap inside folders shows the structure. |
+| Filters | Computed in a single O(n) pass over the arena and cached per (filter, scan, tree generation). Name, size and extension apply to files; exclusions skip files and whole folders with the given name. |
+| Scan comparison | Matched by paths relative to the root; a list of the 1000 largest changes. |
+| `.disklens` format | `DLENS` header + postcard + zstd. The file is not a stable exchange format across versions. |
 
-## Ograniczenia
+## Limitations
 
-- Windows: „zajęte” to przybliżenie (klaster 4 KiB), bez uwzględnienia kompresji NTFS i plików rzadkich.
-- Suma może się różnić od „Użyte” w Finderze. Klony APFS dzielą bloki, a tu są liczone przy każdej kopii. Pliki rzadkie zajmują mniej, niż wynosi ich rozmiar. Migawki lokalne i dane systemowe nie leżą w folderach.
-- Nazwy plików, które nie są poprawnym UTF-8, są przechowywane w wersji „lossy”. Akcje na takich plikach (Finder, Kosz) mogą nie trafić w ścieżkę.
-- Ponowny skan poddrzewa deduplikuje twarde dowiązania tylko w obrębie tego poddrzewa.
+- Windows: "allocated" is an approximation (4 KiB cluster) that ignores NTFS compression and sparse files.
+- The total can differ from "Used" in Finder. APFS clones share blocks but are counted for every copy here. Sparse files take less space than their size. Local snapshots and system data do not live in folders. The **Dysk** (Disk) tab shows how large that gap is.
+- File names that are not valid UTF-8 are stored in a lossy form. Actions on such files (Finder, Trash) may miss the path.
+- Rescanning a subtree deduplicates hard links only within that subtree.
 
-## Architektura
+## Architecture
 
 ```
 src-tauri/src/
-  model.rs      arena węzłów (Vec<Node>, indeksy u32), propagacja sum, detach/clear
-  scanner.rs    równoległy walker na rayon::scope, lstat, hardlinki, pakiety, anulowanie, postęp
-  query.rs      dzieci (sort/stronicowanie), top pliki, podział wg typu, filtry
-  treemap.rs    squarified layout + binarne kodowanie kafli (24 B/kafel)
-  category.rs   rozszerzenie → kategoria
-  actions.rs    blokady ścieżek (osobne reguły macOS/Linux/Windows), Kosz, terminal, wolumeny
-  platform.rs   metadane zależne od systemu: zajęte miejsce, urządzenie, i-węzeł, iCloud
-  persist.rs    zapis/odczyt skanu, eksport CSV/JSON, diff
-  commands.rs   komendy Tauri (async, żeby nie blokować okna)
+  model.rs      node arena (Vec<Node>, u32 indexes), total propagation, detach/clear
+  scanner.rs    parallel walker on rayon::scope, hard links, packages, cancellation, progress
+  listing.rs    reading a folder with metadata: read_dir + lstat, or getattrlistbulk on macOS
+  query.rs      children (sorting/paging), top files, breakdown by type, filters
+  treemap.rs    squarified layout + binary tile encoding (24 B/tile)
+  category.rs   extension → category
+  actions.rs    path protection (separate rules for macOS/Linux/Windows), Trash, terminal
+  volume.rs     volume list, capacity/free space of the scan's volume, scan vs. usage
+  platform.rs   OS-specific metadata: allocated size, device, inode, iCloud
+  persist.rs    saving/loading a scan, CSV/JSON export, diff
+  commands.rs   Tauri commands (async, so they don't block the window)
 src/
-  api.ts        typowane wywołania komend i eventów
-  store.ts      stan UI (zustand)
-  components/   Toolbar, Breadcrumb, FilterBar, FolderTree, Treemap, Panels, Overlays
+  api.ts        typed command and event calls
+  store.ts      UI state (zustand)
+  components/   Toolbar, Breadcrumb, FilterBar, FolderTree, Treemap, Panels, DiskPanel, Volumes, Overlays
 ```
 
-Każdy skan ma własne drzewo (`Arc<RwLock<Tree>>`), więc anulowany skan, który jeszcze kończy pracę, nie psuje nowego. Postęp jest emitowany co 250 ms (`scan://progress`). UI odświeża drzewo przy każdym evencie, a treemapę rzadziej (co 1,2 s), bo layout jest droższy.
+Each scan has its own tree (`Arc<RwLock<Tree>>`), so a cancelled scan that is still finishing does not corrupt a new one. Progress is emitted every 250 ms (`scan://progress`). The UI refreshes the tree on every event and the treemap less often (every 1.2 s), because the layout is more expensive.
