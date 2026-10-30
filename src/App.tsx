@@ -1,3 +1,4 @@
+import { t, useLocale } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { Breadcrumb } from "./components/Breadcrumb";
@@ -127,6 +128,7 @@ function Split({ left, right }: { left: React.ReactNode; right: React.ReactNode 
 }
 
 export function App() {
+  useLocale();
   useProgressEvents();
   useShortcuts();
   useUpdateEvents();
@@ -148,16 +150,16 @@ export function App() {
             right={
               <div className="right">
                 <div className="tabs" role="tablist">
-                  {TABS.map((t) => (
+                  {TABS.map((item) => (
                     <button
-                      key={t.id}
+                      key={item.id}
                       role="tab"
-                      aria-selected={tab === t.id}
-                      className={tab === t.id ? "on" : ""}
-                      onClick={() => setTab(t.id)}
+                      aria-selected={tab === item.id}
+                      className={tab === item.id ? "on" : ""}
+                      onClick={() => setTab(item.id)}
                     >
-                      {t.label}
-                      {t.id === "skipped" && info.skipped > 0 ? <span className="count">{formatCount(info.skipped)}</span> : null}
+                      {t(item.label)}
+                      {item.id === "skipped" && info.skipped > 0 ? <span className="count">{formatCount(info.skipped)}</span> : null}
                     </button>
                   ))}
                 </div>

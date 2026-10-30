@@ -1,3 +1,4 @@
+import { t, useLocale } from "../i18n";
 import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -12,7 +13,7 @@ type Status =
   | { kind: "latest" }
   | { kind: "available"; info: UpdateInfo }
   | { kind: "installing"; info: UpdateInfo; done: number; total: number }
-  | { kind: "error"; message: string; info?: UpdateInfo };
+  | { kind: "error"; message: unknown; info?: UpdateInfo };
 
 /** Wynik cichego sprawdzenia po starcie (i każdego kolejnego) trafia do store'a. */
 export function useUpdateEvents() {
@@ -31,17 +32,19 @@ export function useUpdateEvents() {
 
 /** Przycisk na pasku narzędzi, widoczny tylko gdy jest nowa wersja. */
 export function UpdateButton() {
+  useLocale();
   const update = useStore((s) => s.update);
   const setUpdateDialog = useStore((s) => s.setUpdateDialog);
   if (!update) return null;
   return (
-    <button className="btn update-btn" onClick={() => setUpdateDialog("show")} title="Pobierz i zainstaluj nową wersję">
-      Aktualizacja {update.version}
+    <button className="btn update-btn" onClick={() => setUpdateDialog("show")} title={t("Pobierz i zainstaluj nową wersję")}>
+      {t("Aktualizacja {version}", { version: update.version })}
     </button>
   );
 }
 
 export function UpdateDialog() {
+  const locale = useLocale();
   const mode = useStore((s) => s.updateDialog);
   const setUpdateDialog = useStore((s) => s.setUpdateDialog);
   const known = useStore((s) => s.update);
@@ -69,7 +72,7 @@ export function UpdateDialog() {
     api
       .checkUpdate()
       .then((info) => alive && setStatus(info ? { kind: "available", info } : { kind: "latest" }))
-      .catch((e) => alive && setStatus({ kind: "error", message: errorMessage(e) }));
+      .catch((e) => alive && setStatus({ kind: "error", message: e }));
     return () => {
       alive = false;
     };
@@ -90,7 +93,7 @@ export function UpdateDialog() {
   const install = (info: UpdateInfo) => {
     setStatus({ kind: "installing", info, done: 0, total: 0 });
     // Po udanej instalacji aplikacja startuje od nowa – tu wracamy tylko z błędem.
-    api.installUpdate().catch((e) => setStatus({ kind: "error", message: errorMessage(e), info }));
+    api.installUpdate().catch((e) => setStatus({ kind: "error", message: e, info }));
   };
   const info = status.kind === "available" || status.kind === "installing" || status.kind === "error" ? status.info : undefined;
   const fraction = installing && status.total > 0 ? Math.min(1, status.done / status.total) : 0;
@@ -104,15 +107,17 @@ export function UpdateDialog() {
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.key === "Escape" && close()}
       >
-        <h2 id="update-title">{info ? `Disk Lens ${info.version}` : "Aktualizacje"}</h2>
+        <h2 id="update-title">{info ? `Disk Lens ${info.version}` : t("Aktualizacje")}</h2>
         <p className="muted">
-          Zainstalowana wersja: {version || known?.currentVersion || "?"}
-          {info?.date ? ` · nowa wersja z ${info.date}` : ""}
+          {t("Zainstalowana wersja: {version}", { version: version || known?.currentVersion || "?" })}
+          {info?.date ? ` · ${t("nowa wersja z {date}", {
+            date: Number.isNaN(Date.parse(info.date)) ? info.date : new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(info.date)),
+          })}` : ""}
         </p>
 
-        {status.kind === "checking" ? <p>Sprawdzam…</p> : null}
-        {status.kind === "latest" ? <p>Masz najnowszą wersję.</p> : null}
-        {status.kind === "error" ? <p className="error">{status.message}</p> : null}
+        {status.kind === "checking" ? <p>{t("Sprawdzam…")}</p> : null}
+        {status.kind === "latest" ? <p>{t("Masz najnowszą wersję.")}</p> : null}
+        {status.kind === "error" ? <p className="error">{errorMessage(status.message)}</p> : null}
         {info?.notes && !installing ? <div className="update-notes">{info.notes}</div> : null}
         {installing ? (
           <>
@@ -121,39 +126,39 @@ export function UpdateDialog() {
             </div>
             <p className="muted">
               {status.total > 0
-                ? `Pobrano ${formatBytes(status.done)} z ${formatBytes(status.total)}`
-                : `Pobrano ${formatBytes(status.done)}`}
-              {" "}· po instalacji aplikacja uruchomi się ponownie.
+                ? t("Pobrano {done} z {total}", { done: formatBytes(status.done), total: formatBytes(status.total) })
+                : t("Pobrano {done}", { done: formatBytes(status.done) })}
+              {" "}· {t("po instalacji aplikacja uruchomi się ponownie.")}
             </p>
           </>
         ) : null}
         {status.kind === "available" && scanning ? (
-          <p className="muted">Instalacja uruchomi aplikację ponownie – poczekaj na koniec skanu albo go anuluj.</p>
+          <p className="muted">{t("Instalacja uruchomi aplikację ponownie – poczekaj na koniec skanu albo go anuluj.")}</p>
         ) : null}
 
         <div className="modal-actions">
           {status.kind === "error" ? (
             <button className="btn" onClick={() => openUrl(RELEASES).catch(() => {})}>
-              Otwórz stronę wydania
+              {t("Otwórz stronę wydania")}
             </button>
           ) : null}
           {status.kind === "error" && !status.info ? (
             <button className="btn" onClick={() => setAttempt((a) => a + 1)}>
-              Spróbuj ponownie
+              {t("Spróbuj ponownie")}
             </button>
           ) : null}
           {status.kind === "latest" || (status.kind === "error" && !status.info) ? (
             <button className="btn" onClick={close}>
-              Zamknij
+              {t("Zamknij")}
             </button>
           ) : (
             <button className="btn" disabled={installing} onClick={close}>
-              Później
+              {t("Później")}
             </button>
           )}
           {status.kind === "available" || (status.kind === "error" && status.info) ? (
             <button className="btn primary" disabled={scanning} onClick={() => info && install(info)}>
-              Pobierz i zainstaluj
+              {t("Pobierz i zainstaluj")}
             </button>
           ) : null}
         </div>

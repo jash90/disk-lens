@@ -1,11 +1,24 @@
 const UNITS = ["B", "KB", "MB", "GB", "TB", "PB"];
-const num1 = new Intl.NumberFormat("pl-PL", { maximumFractionDigits: 1, minimumFractionDigits: 1 });
-const num0 = new Intl.NumberFormat("pl-PL", { maximumFractionDigits: 0 });
-const dateFmt = new Intl.DateTimeFormat("pl-PL", { dateStyle: "medium", timeStyle: "short" });
-const dateShort = new Intl.DateTimeFormat("pl-PL", { dateStyle: "short" });
+import { getLocale } from "../i18n/locale.ts";
+
+let formattedLocale = "";
+let num1: Intl.NumberFormat;
+let num0: Intl.NumberFormat;
+let dateFmt: Intl.DateTimeFormat;
+let dateShort: Intl.DateTimeFormat;
+function updateFormats() {
+  const locale = getLocale();
+  if (locale === formattedLocale) return;
+  formattedLocale = locale;
+  num1 = new Intl.NumberFormat(locale, { maximumFractionDigits: 1, minimumFractionDigits: 1 });
+  num0 = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+  dateFmt = new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" });
+  dateShort = new Intl.DateTimeFormat(locale, { dateStyle: "short" });
+}
 
 /** Rozmiar w systemie dziesiętnym (1 KB = 1000 B), tak jak liczy Finder i GNOME. */
 export function formatBytes(bytes: number): string {
+  updateFormats();
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
   let i = 0;
   let v = bytes;
@@ -17,23 +30,27 @@ export function formatBytes(bytes: number): string {
 }
 
 export function formatCount(n: number): string {
+  updateFormats();
   return num0.format(n);
 }
 
 export function formatPct(p: number): string {
-  if (p > 0 && p < 0.1) return "<0,1%";
+  updateFormats();
+  if (p > 0 && p < 0.1) return `<${num1.format(0.1)}%`;
   return `${num1.format(p)}%`;
 }
 
 export function formatDate(unixSeconds: number, short = false): string {
+  updateFormats();
   if (!unixSeconds) return "—";
   return (short ? dateShort : dateFmt).format(new Date(unixSeconds * 1000));
 }
 
 export function formatDuration(ms: number): string {
+  updateFormats();
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
-  return m > 0 ? `${m} min ${s % 60} s` : `${(ms / 1000).toFixed(1).replace(".", ",")} s`;
+  return m > 0 ? `${m} min ${s % 60} s` : `${num1.format(ms / 1000)} s`;
 }
 
 /** Odmiana: 1 plik, 2 pliki, 5 plików. */
@@ -55,10 +72,14 @@ export function middleEllipsis(s: string, max: number): string {
 
 /** „1 plik”, „3 pliki”, „12 plików”. */
 export function filesLabel(n: number): string {
-  return `${formatCount(n)} ${plural(n, "plik", "pliki", "plików")}`;
+  const locale = getLocale();
+  const label = locale === "de" ? (n === 1 ? "Datei" : "Dateien") : locale === "en" ? (n === 1 ? "file" : "files") : plural(n, "plik", "pliki", "plików");
+  return `${formatCount(n)} ${label}`;
 }
 
 /** „1 folder”, „3 foldery”, „12 folderów”. */
 export function foldersLabel(n: number): string {
-  return `${formatCount(n)} ${plural(n, "folder", "foldery", "folderów")}`;
+  const locale = getLocale();
+  const label = locale === "de" ? "Ordner" : locale === "en" ? (n === 1 ? "folder" : "folders") : plural(n, "folder", "foldery", "folderów");
+  return `${formatCount(n)} ${label}`;
 }

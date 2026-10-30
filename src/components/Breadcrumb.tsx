@@ -1,9 +1,11 @@
+import { t, useLocale } from "../i18n";
 import { useEffect, useState } from "react";
 import { api, type Crumb } from "../api";
 import { useStore } from "../store";
 import { shortcut } from "../lib/platform";
 
 export function Breadcrumb() {
+  useLocale();
   const root = useStore((s) => s.root);
   const version = useStore((s) => s.version);
   const back = useStore((s) => s.back);
@@ -25,11 +27,11 @@ export function Breadcrumb() {
   const parent = crumbs.length > 1 ? crumbs[crumbs.length - 2].id : null;
 
   return (
-    <nav className="crumbs" aria-label="Ścieżka">
-      <button className="btn icon" disabled={back.length === 0} onClick={goBack} title={`Wstecz (Esc, ${shortcut("[")})`}>
+    <nav className="crumbs" aria-label={t("Ścieżka")}>
+      <button className="btn icon" disabled={back.length === 0} onClick={goBack} title={t("Wstecz (Esc, {shortcut})", { shortcut: shortcut("[") })}>
         ←
       </button>
-      <button className="btn icon" disabled={parent === null} onClick={() => parent !== null && navigate(parent)} title="Folder nadrzędny">
+      <button className="btn icon" disabled={parent === null} onClick={() => parent !== null && navigate(parent)} title={t("Folder nadrzędny")}>
         ↑
       </button>
       <ol>

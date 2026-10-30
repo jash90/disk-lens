@@ -5,11 +5,12 @@ import { CATEGORY_COLORS, kindIcon } from "../lib/colors";
 import { filesLabel, formatBytes, formatCount, formatDate, formatPct } from "../lib/format";
 import { useStore, useViewArgs } from "../store";
 import { IS_MAC } from "../lib/platform";
+import { t, useLocale } from "../i18n";
 
 /** Wspólne pobieranie danych panelu przy zmianie korzenia/danych/widoku. */
-function usePanelData<T>(load: () => Promise<T>, deps: unknown[]): { data: T | null; error: string | null } {
+function usePanelData<T>(load: () => Promise<T>, deps: unknown[]): { data: T | null; error: unknown } {
   const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   useEffect(() => {
     let alive = true;
     load()
@@ -19,7 +20,7 @@ function usePanelData<T>(load: () => Promise<T>, deps: unknown[]): { data: T | n
           setError(null);
         }
       })
-      .catch((e) => alive && setError(errorMessage(e)));
+      .catch((e) => alive && setError(() => e));
     return () => {
       alive = false;
     };
@@ -29,6 +30,7 @@ function usePanelData<T>(load: () => Promise<T>, deps: unknown[]): { data: T | n
 }
 
 export function TopFiles() {
+  useLocale();
   const root = useStore((s) => s.root);
   const version = useStore((s) => s.version);
   const selected = useStore((s) => s.selected);
@@ -38,18 +40,18 @@ export function TopFiles() {
   const { data, error } = usePanelData<FileRow[]>(() => api.topFiles(root, view, 100), [root, version, view]);
   const max = data?.[0]?.size ?? 1;
 
-  if (error) return <div className="panel-msg error">{error}</div>;
-  if (!data) return <div className="panel-msg">Liczę…</div>;
-  if (data.length === 0) return <div className="panel-msg">Brak plików w tym widoku.</div>;
+  if (error) return <div className="panel-msg error">{errorMessage(error)}</div>;
+  if (!data) return <div className="panel-msg">{t("Liczę…")}</div>;
+  if (data.length === 0) return <div className="panel-msg">{t("Brak plików w tym widoku.")}</div>;
   return (
     <div className="panel-scroll">
       <table className="list">
         <thead>
           <tr>
             <th className="num">#</th>
-            <th>Plik</th>
-            <th className="num">Rozmiar</th>
-            <th>Zmodyfikowano</th>
+            <th>{t("Plik")}</th>
+            <th className="num">{t("Rozmiar")}</th>
+            <th>{t("Zmodyfikowano")}</th>
           </tr>
         </thead>
         <tbody>
@@ -89,6 +91,7 @@ export function TopFiles() {
 }
 
 export function TypeBreakdownPanel() {
+  useLocale();
   const root = useStore((s) => s.root);
   const version = useStore((s) => s.version);
   const view = useViewArgs();
@@ -96,23 +99,23 @@ export function TypeBreakdownPanel() {
   const setFilter = useStore((s) => s.setFilter);
   const { data, error } = usePanelData<Breakdown>(() => api.typeBreakdown(root, view), [root, version, view]);
 
-  if (error) return <div className="panel-msg error">{error}</div>;
-  if (!data) return <div className="panel-msg">Liczę…</div>;
+  if (error) return <div className="panel-msg error">{errorMessage(error)}</div>;
+  if (!data) return <div className="panel-msg">{t("Liczę…")}</div>;
   const total = Math.max(1, data.categories.reduce((a, c) => a + c.size, 0));
   return (
     <div className="panel-scroll breakdown">
       <div className="stacked" aria-hidden>
         {data.categories.map((c) => (
-          <span key={c.cat} style={{ width: `${(c.size / total) * 100}%`, background: CATEGORY_COLORS[c.cat] }} title={c.name} />
+          <span key={c.cat} style={{ width: `${(c.size / total) * 100}%`, background: CATEGORY_COLORS[c.cat] }} title={t(c.name)} />
         ))}
       </div>
-      <h3>Kategorie</h3>
+      <h3>{t("Kategorie")}</h3>
       <table className="list">
         <tbody>
           {data.categories.map((c) => (
             <tr key={c.cat}>
               <td>
-                <span className="swatch" style={{ background: CATEGORY_COLORS[c.cat] }} /> {c.name}
+                <span className="swatch" style={{ background: CATEGORY_COLORS[c.cat] }} /> {t(c.name)}
               </td>
               <td className="num">{formatBytes(c.size)}</td>
               <td className="num muted">{formatPct((c.size / total) * 100)}</td>
@@ -121,14 +124,14 @@ export function TypeBreakdownPanel() {
           ))}
         </tbody>
       </table>
-      <h3>Rozszerzenia</h3>
+      <h3>{t("Rozszerzenia")}</h3>
       <table className="list">
         <tbody>
           {data.extensions.map((e) => (
             <tr key={e.ext}>
               <td>
                 <span className="swatch" style={{ background: CATEGORY_COLORS[e.cat] }} />{" "}
-                {e.ext.startsWith("(") ? e.ext : `.${e.ext}`}
+                {e.ext.startsWith("(") ? t(e.ext) : `.${e.ext}`}
               </td>
               <td className="num">{formatBytes(e.size)}</td>
               <td className="num muted">{formatPct((e.size / total) * 100)}</td>
@@ -136,7 +139,7 @@ export function TypeBreakdownPanel() {
               <td className="num">
                 {e.ext.startsWith("(") ? null : (
                   <button className="link" onClick={() => setFilter({ ...filter, extensions: [e.ext] })}>
-                    filtruj
+                    {t("filtruj")}
                   </button>
                 )}
               </td>
@@ -149,35 +152,33 @@ export function TypeBreakdownPanel() {
 }
 
 export function SkippedPanel() {
+  useLocale();
   const version = useStore((s) => s.version);
   const { data, error } = usePanelData<{ total: number; items: Skipped[] }>(() => api.skippedPaths(2000), [version]);
-  if (error) return <div className="panel-msg error">{error}</div>;
-  if (!data) return <div className="panel-msg">Wczytuję…</div>;
+  if (error) return <div className="panel-msg error">{errorMessage(error)}</div>;
+  if (!data) return <div className="panel-msg">{t("Wczytuję…")}</div>;
   return (
     <div className="panel-scroll">
       <div className="callout">
         {data.total === 0 ? (
-          <p>Wszystkie foldery zostały odczytane.</p>
+          <p>{t("Wszystkie foldery zostały odczytane.")}</p>
         ) : (
           <>
             <p>
-              Pominięto <b>{formatCount(data.total)}</b> ścieżek (brak uprawnień lub błąd odczytu). Ich zawartość nie jest
-              wliczona do sum.
+              {t("Pominięto")} <b>{formatCount(data.total)}</b> {t("ścieżek (brak uprawnień lub błąd odczytu). Ich zawartość nie jest wliczona do sum.")}
             </p>
             {IS_MAC ? (
               <>
                 <p className="muted">
-                  Chronione foldery (Poczta, Wiadomości, Safari, kontenery aplikacji) wymagają „Pełnego dostępu do dysku” dla
-                  Disk Lens. Po nadaniu uprawnienia uruchom aplikację ponownie i przeskanuj.
+                  {t("Chronione foldery (Poczta, Wiadomości, Safari, kontenery aplikacji) wymagają „Pełnego dostępu do dysku” dla Disk Lens. Po nadaniu uprawnienia uruchom aplikację ponownie i przeskanuj.")}
                 </p>
                 <button className="btn" onClick={() => api.openPrivacySettings().catch(() => {})}>
-                  Otwórz ustawienia prywatności
+                  {t("Otwórz ustawienia prywatności")}
                 </button>
               </>
             ) : (
               <p className="muted">
-                Część folderów systemowych i innych użytkowników jest dostępna tylko dla administratora. Uruchom Disk Lens z
-                uprawnieniami administratora, jeśli chcesz je policzyć.
+                {t("Część folderów systemowych i innych użytkowników jest dostępna tylko dla administratora. Uruchom Disk Lens z uprawnieniami administratora, jeśli chcesz je policzyć.")}
               </p>
             )}
           </>
@@ -189,14 +190,14 @@ export function SkippedPanel() {
             {data.items.map((s, i) => (
               <tr key={`${s.path}-${i}`}>
                 <td className="path-cell">{s.path}</td>
-                <td className="muted">{s.error}</td>
+                <td className="muted">{errorMessage(s.error)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       ) : null}
       {data.total > data.items.length ? (
-        <div className="panel-msg">… i {formatCount(data.total - data.items.length)} więcej</div>
+        <div className="panel-msg">{t("… i {count} więcej", { count: formatCount(data.total - data.items.length) })}</div>
       ) : null}
     </div>
   );
@@ -205,10 +206,11 @@ export function SkippedPanel() {
 const STATUS_LABEL: Record<string, string> = { grown: "urosło", shrunk: "zmalało", added: "nowe", removed: "usunięte" };
 
 export function DiffPanel() {
+  useLocale();
   const mode = useStore((s) => s.mode);
   const scanning = useStore((s) => s.scanning);
   const [result, setResult] = useState<DiffResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [onlyDirs, setOnlyDirs] = useState(false);
   const [file, setFile] = useState<string | null>(null);
@@ -220,7 +222,7 @@ export function DiffPanel() {
       setResult(await api.diffScans(path, mode));
       setFile(path);
     } catch (e) {
-      setError(errorMessage(e));
+      setError(() => e);
     } finally {
       setBusy(false);
     }
@@ -233,7 +235,7 @@ export function DiffPanel() {
   }, [mode]);
 
   const choose = async () => {
-    const p = await pickScanFile("Wybierz wcześniejszy skan do porównania");
+    const p = await pickScanFile(t("Wybierz wcześniejszy skan do porównania"));
     if (p) run(p);
   };
 
@@ -244,19 +246,18 @@ export function DiffPanel() {
     <div className="panel-scroll">
       <div className="callout">
         <p>
-          Porównaj bieżący skan z wcześniej zapisanym (Plik → Zapisz skan…) tego samego folderu, żeby zobaczyć, co urosło, a co
-          zmalało.
+          {t("Porównaj bieżący skan z wcześniej zapisanym (Plik → Zapisz skan…) tego samego folderu, żeby zobaczyć, co urosło, a co zmalało.")}
         </p>
         <button className="btn" onClick={choose} disabled={busy || scanning}>
-          {busy ? "Porównuję…" : "Wybierz zapisany skan…"}
+          {t(busy ? "Porównuję…" : "Wybierz zapisany skan…")}
         </button>
-        {error ? <p className="error">{error}</p> : null}
+        {error ? <p className="error">{errorMessage(error)}</p> : null}
       </div>
       {result ? (
         <>
           {result.beforeRoot !== result.afterRoot ? (
             <p className="warn-text">
-              Uwaga: porównujesz różne foldery ({result.beforeRoot} → {result.afterRoot}).
+              {t("Uwaga: porównujesz różne foldery ({before} → {after}).", { before: result.beforeRoot, after: result.afterRoot })}
             </p>
           ) : null}
           <div className="diff-summary">
@@ -265,24 +266,24 @@ export function DiffPanel() {
             </span>
             <span>→</span>
             <span>
-              teraz: <b>{formatBytes(result.totalAfter)}</b>
+              {t("teraz:")} <b>{formatBytes(result.totalAfter)}</b>
             </span>
             <span className={delta >= 0 ? "up" : "down"}>
               {delta >= 0 ? "+" : "−"}
               {formatBytes(Math.abs(delta))}
             </span>
             <label className="check">
-              <input type="checkbox" checked={onlyDirs} onChange={(e) => setOnlyDirs(e.target.checked)} /> tylko foldery
+              <input type="checkbox" checked={onlyDirs} onChange={(e) => setOnlyDirs(e.target.checked)} /> {t("tylko foldery")}
             </label>
           </div>
           <table className="list">
             <thead>
               <tr>
-                <th>Ścieżka</th>
-                <th>Zmiana</th>
-                <th className="num">Przed</th>
-                <th className="num">Po</th>
-                <th className="num">Różnica</th>
+                <th>{t("Ścieżka")}</th>
+                <th>{t("Zmiana")}</th>
+                <th className="num">{t("Przed")}</th>
+                <th className="num">{t("Po")}</th>
+                <th className="num">{t("Różnica")}</th>
               </tr>
             </thead>
             <tbody>
@@ -293,7 +294,7 @@ export function DiffPanel() {
                     {e.path}
                   </td>
                   <td>
-                    <span className={`status ${e.status}`}>{STATUS_LABEL[e.status]}</span>
+                    <span className={`status ${e.status}`}>{t(STATUS_LABEL[e.status])}</span>
                   </td>
                   <td className="num muted">{formatBytes(e.before)}</td>
                   <td className="num muted">{formatBytes(e.after)}</td>
@@ -305,7 +306,7 @@ export function DiffPanel() {
               ))}
             </tbody>
           </table>
-          {entries.length === 0 ? <div className="panel-msg">Brak różnic.</div> : null}
+          {entries.length === 0 ? <div className="panel-msg">{t("Brak różnic.")}</div> : null}
         </>
       ) : null}
     </div>

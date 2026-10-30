@@ -1,3 +1,4 @@
+import { t, useLocale } from "../i18n";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, Flags, type Page, type Row, type SortKey } from "../api";
@@ -31,17 +32,19 @@ const COLUMNS: { key: SortKey | null; label: string; className: string }[] = [
 ];
 
 function FlagBadges({ flags }: { flags: number }) {
+  useLocale();
   return (
     <>
-      {flags & Flags.UNREADABLE ? <span className="badge warn" title="Brak dostępu – zawartość nie została policzona">⚠</span> : null}
-      {flags & Flags.DATALESS ? <span className="badge" title="Plik tylko w iCloud – nie zajmuje miejsca lokalnie">☁</span> : null}
-      {flags & Flags.OTHER_VOLUME ? <span className="badge" title="Inny wolumen – nie wchodzimy do środka">⛁</span> : null}
-      {flags & Flags.HARDLINK_DUP ? <span className="badge" title="Kolejne twarde dowiązanie – rozmiar policzony gdzie indziej">🔗</span> : null}
+      {flags & Flags.UNREADABLE ? <span className="badge warn" title={t("Brak dostępu – zawartość nie została policzona")}>⚠</span> : null}
+      {flags & Flags.DATALESS ? <span className="badge" title={t("Plik tylko w iCloud – nie zajmuje miejsca lokalnie")}>☁</span> : null}
+      {flags & Flags.OTHER_VOLUME ? <span className="badge" title={t("Inny wolumen – nie wchodzimy do środka")}>⛁</span> : null}
+      {flags & Flags.HARDLINK_DUP ? <span className="badge" title={t("Kolejne twarde dowiązanie – rozmiar policzony gdzie indziej")}>🔗</span> : null}
     </>
   );
 }
 
 export function FolderTree() {
+  useLocale();
   const root = useStore((s) => s.root);
   const scanId = useStore((s) => s.info?.scanId ?? 0);
   const version = useStore((s) => s.version);
@@ -237,13 +240,13 @@ export function FolderTree() {
             disabled={!c.key}
             onClick={() => c.key && setSort(c.key)}
           >
-            {c.label}
+            {t(c.label)}
             {c.key === sortKey ? <span className="sort-arrow">{sortDesc ? "▼" : "▲"}</span> : null}
           </button>
         ))}
       </div>
       <div className="tree-body" ref={scrollRef} tabIndex={0} onKeyDown={onKeyDown}>
-        {rootPage && rootPage.total === 0 ? <div className="empty-note">Brak elementów do pokazania.</div> : null}
+        {rootPage && rootPage.total === 0 ? <div className="empty-note">{t("Brak elementów do pokazania.")}</div> : null}
         <div style={{ height: virt.getTotalSize(), position: "relative" }}>
           {virt.getVirtualItems().map((vi) => {
             const f = flat[vi.index];
@@ -252,13 +255,13 @@ export function FolderTree() {
               return (
                 <div key={`more-${f.parent}`} className="tr more" style={style}>
                   <span style={{ paddingLeft: 12 + f.depth * INDENT }}>
-                    … i {formatCount(f.hidden)} mniejszych elementów{" "}
+                    {t("… i {count} mniejszych elementów", { count: formatCount(f.hidden) })}{" "}
                     {f.canLoad ? (
                       <button className="link" onClick={() => loadMore(f.parent)}>
-                        pokaż więcej
+                        {t("pokaż więcej")}
                       </button>
                     ) : (
-                      <em>(zawęź filtrem)</em>
+                      <em>{t("(zawęź filtrem)")}</em>
                     )}
                   </span>
                 </div>

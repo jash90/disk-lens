@@ -1,3 +1,4 @@
+import { volumeLabel } from "../i18n/volume";
 import type { ReactNode } from "react";
 import type { Coverage, TreeInfo, VolumeInfo } from "../api";
 import { startScan } from "../lib/actions";
@@ -5,6 +6,7 @@ import { formatBytes, formatCount, formatDate, formatPct } from "../lib/format";
 import { IS_MAC, OS } from "../lib/platform";
 import { useStore } from "../store";
 import { useVolumes, VolumeTile } from "./Volumes";
+import { t, useLocale } from "../i18n";
 
 /** Skan starszy niż to (s) dostaje uwagę, że dane dysku są nowsze niż skan. */
 const STALE_AFTER = 15 * 60;
@@ -29,6 +31,7 @@ interface Segment {
 
 /** Pasek złożony z segmentów + legenda z wartościami i udziałem w całości. */
 function StackBar({ segments, total }: { segments: Segment[]; total: number }) {
+  useLocale();
   const shown = segments.filter((s) => s.value > 0);
   return (
     <div className="stack">
@@ -54,6 +57,7 @@ function StackBar({ segments, total }: { segments: Segment[]; total: number }) {
 }
 
 function CoverageSection({ info, vol, cov }: { info: TreeInfo; vol: VolumeInfo; cov: Coverage }) {
+  useLocale();
   const scanning = useStore((s) => s.scanning);
   const setTab = useStore((s) => s.setTab);
   const whole = isWholeVolume(info, vol);
@@ -63,66 +67,64 @@ function CoverageSection({ info, vol, cov }: { info: TreeInfo; vol: VolumeInfo; 
 
   return (
     <>
-      <h3>Skan a zajętość dysku</h3>
-      {scanning ? <p className="muted">Trwa skan – zestawienie będzie pełne po jego zakończeniu.</p> : null}
+      <h3>{t("Skan a zajętość dysku")}</h3>
+      {scanning ? <p className="muted">{t("Trwa skan – zestawienie będzie pełne po jego zakończeniu.")}</p> : null}
       <StackBar
         total={cov.used}
         segments={[
-          { label: "Znalezione w skanie", value: found, cls: "scanned" },
-          { label: "Poza skanem", value: cov.unaccounted, cls: "unaccounted" },
+          { label: t("Znalezione w skanie"), value: found, cls: "scanned" },
+          { label: t("Poza skanem"), value: cov.unaccounted, cls: "unaccounted" },
         ]}
       />
       {cov.overcounted > 0 ? (
         <p className="muted">
-          Skan pokazuje o {formatBytes(cov.overcounted)} więcej, niż zajmuje wolumen. Tak bywa przy klonach plików APFS (kopia
-          nie zajmuje nowego miejsca, ale liczy się dwa razy) i przy skanie obejmującym inne wolumeny.
+          {t("Skan pokazuje o {size} więcej, niż zajmuje wolumen. Tak bywa przy klonach plików APFS (kopia nie zajmuje nowego miejsca, ale liczy się dwa razy) i przy skanie obejmującym inne wolumeny.", { size: formatBytes(cov.overcounted) })}
         </p>
       ) : null}
       {cov.unaccounted > 0 && !scanning ? (
         <>
-          <p>Na „Poza skanem” składają się m.in.:</p>
+          <p>{t("Na „Poza skanem” składają się m.in.:")}</p>
           <ul className="disk-reasons">
             {!whole ? (
               <li>
                 <span>
-                  Pozostałe foldery na tym dysku – przeskanowano tylko <code>{info.rootPath}</code>.
+                  {t("Pozostałe foldery na tym dysku – przeskanowano tylko")} <code>{info.rootPath}</code>.
                 </span>
                 <button className="btn small" onClick={() => startScan(scanTarget(vol), false)}>
-                  Skanuj cały dysk
+                  {t("Skanuj cały dysk")}
                 </button>
               </li>
             ) : null}
             {info.skipped > 0 ? (
               <li>
-                <span>{formatCount(info.skipped)} pominiętych ścieżek (brak uprawnień) – ich zawartość nie jest policzona.</span>
+                <span>{t("{count} pominiętych ścieżek (brak uprawnień) – ich zawartość nie jest policzona.", { count: formatCount(info.skipped) })}</span>
                 <button className="btn small" onClick={() => setTab("skipped")}>
-                  Pokaż
+                  {t("Pokaż")}
                 </button>
               </li>
             ) : null}
             {apfs ? (
               <>
                 <li>
-                  Inne wolumeny tego samego kontenera APFS – system, VM (pamięć wymiany), Preboot, Recovery – dzielą to samo
-                  miejsce.
+                  {t("Inne wolumeny tego samego kontenera APFS – system, VM (pamięć wymiany), Preboot, Recovery – dzielą to samo miejsce.")}
                 </li>
-                <li>Migawki APFS i kopie lokalne Time Machine – nie są widoczne jako pliki.</li>
+                <li>{t("Migawki APFS i kopie lokalne Time Machine – nie są widoczne jako pliki.")}</li>
               </>
             ) : null}
             {OS === "windows" ? (
-              <li>Plik stronicowania i hibernacji, punkty przywracania systemu i kopie w tle (VSS).</li>
+              <li>{t("Plik stronicowania i hibernacji, punkty przywracania systemu i kopie w tle (VSS).")}</li>
             ) : null}
-            {OS === "linux" ? <li>Bloki zarezerwowane dla administratora (np. 5% na ext4) i pliki innych użytkowników.</li> : null}
+            {OS === "linux" ? <li>{t("Bloki zarezerwowane dla administratora (np. 5% na ext4) i pliki innych użytkowników.")}</li> : null}
             {cov.purgeable > 0 ? (
-              <li>{formatBytes(cov.purgeable)} do odzyskania – pamięć podręczna i kopie, które system zwolni sam, gdy zabraknie miejsca.</li>
+              <li>{t("{size} do odzyskania – pamięć podręczna i kopie, które system zwolni sam, gdy zabraknie miejsca.", { size: formatBytes(cov.purgeable) })}</li>
             ) : null}
-            <li>Metadane systemu plików (katalogi, dziennik, mapy wolnych bloków) – nie należą do żadnego pliku.</li>
+            <li>{t("Metadane systemu plików (katalogi, dziennik, mapy wolnych bloków) – nie należą do żadnego pliku.")}</li>
           </ul>
         </>
       ) : null}
       {stale ? (
         <p className="muted">
-          Skan z {formatDate(info.scannedAt)}, a dane dysku są bieżące – od tamtej pory zawartość mogła się zmienić.
+          {t("Skan z {date}, a dane dysku są bieżące – od tamtej pory zawartość mogła się zmienić.", { date: formatDate(info.scannedAt) })}
         </p>
       ) : null}
     </>
@@ -130,6 +132,7 @@ function CoverageSection({ info, vol, cov }: { info: TreeInfo; vol: VolumeInfo; 
 }
 
 export function DiskPanel() {
+  useLocale();
   const info = useStore((s) => s.info);
   const volumes = useVolumes();
   if (!info) return null;
@@ -141,28 +144,28 @@ export function DiskPanel() {
         <>
           <div className="disk-head">
             <div>
-              <h2>{vol.name}</h2>
+              <h2>{volumeLabel(vol.name, vol.mountPath)}</h2>
               <span className="muted">
                 {vol.mountPath} · {vol.fsType.toUpperCase()}
               </span>
             </div>
             <div className="disk-free">
-              <b>{formatBytes(vol.free)}</b> wolne z {formatBytes(vol.total)}
+              <b>{formatBytes(vol.free)}</b> {t("wolne z {total}", { total: formatBytes(vol.total) })}
             </div>
           </div>
           <StackBar
             total={vol.total}
             segments={[
-              { label: "Zajęte", value: vol.total - vol.free - (info.coverage?.purgeable ?? 0), cls: "used" },
+              { label: t("Zajęte"), value: vol.total - vol.free - (info.coverage?.purgeable ?? 0), cls: "used" },
               ...(info.coverage?.purgeable
-                ? [{ label: "Do odzyskania", value: info.coverage.purgeable, cls: "purgeable", note: "zwalniane przez system" }]
+                ? [{ label: t("Do odzyskania"), value: info.coverage.purgeable, cls: "purgeable", note: t("zwalniane przez system") }]
                 : []),
-              { label: "Wolne", value: vol.free, cls: "free" },
+              { label: t("Wolne"), value: vol.free, cls: "free" },
             ]}
           />
           {vol.availableImportant !== null && vol.availableImportant > vol.free ? (
             <p className="muted">
-              Finder pokazuje jako dostępne {formatBytes(vol.availableImportant)}: wolne miejsce plus to, które macOS zwolni sam.
+              {t("Finder pokazuje jako dostępne {size}: wolne miejsce plus to, które macOS zwolni sam.", { size: formatBytes(vol.availableImportant) })}
             </p>
           ) : null}
           {info.coverage ? <CoverageSection info={info} vol={vol} cov={info.coverage} /> : null}
@@ -170,15 +173,14 @@ export function DiskPanel() {
       ) : (
         <div className="callout">
           <p>
-            Brak danych o wolumenie dla <code>{info.rootPath}</code> – ścieżka nie istnieje albo dysk jest odłączony (np. wczytany
-            skan z innego komputera).
+            {t("Brak danych o wolumenie dla")} <code>{info.rootPath}</code> {t("– ścieżka nie istnieje albo dysk jest odłączony (np. wczytany skan z innego komputera).")}
           </p>
         </div>
       )}
 
       {volumes.length > 0 ? (
         <>
-          <h3>Wszystkie dyski</h3>
+          <h3>{t("Wszystkie dyski")}</h3>
           <div className="volumes">
             {volumes.map((v) => (
               <VolumeTile
@@ -197,6 +199,7 @@ export function DiskPanel() {
 
 /** Wolne miejsce w stopce; kliknięcie otwiera zakładkę „Dysk”. */
 export function DiskMini() {
+  useLocale();
   const vol = useStore((s) => s.info?.volume);
   const setTab = useStore((s) => s.setTab);
   if (!vol) return null;
@@ -205,10 +208,10 @@ export function DiskMini() {
     <button
       className="disk-mini"
       onClick={() => setTab("disk")}
-      title={`${vol.name}: ${formatBytes(used)} zajęte z ${formatBytes(vol.total)} – szczegóły w zakładce „Dysk”`}
+      title={t("{name}: {used} zajęte z {total} – szczegóły w zakładce „Dysk”", { name: volumeLabel(vol.name, vol.mountPath), used: formatBytes(used), total: formatBytes(vol.total) })}
     >
       <span>
-        Wolne <b>{formatBytes(vol.free)}</b> z {formatBytes(vol.total)}
+        {t("Wolne")} <b>{formatBytes(vol.free)}</b> {t("z {total}", { total: formatBytes(vol.total) })}
       </span>
       <span className="bar">
         <span className="fill" style={{ width: `${vol.total ? (used / vol.total) * 100 : 0}%` }} />

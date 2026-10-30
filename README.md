@@ -14,7 +14,7 @@ On top of that:
 - export to CSV/JSON, and saving/loading a scan as a `.disklens` file;
 - in-app updates from GitHub Releases (signed; installing always needs a click).
 
-The app's interface is in Polish. Below, UI labels are quoted as they appear in the app, with an English translation.
+The interface supports Polish, German and English. Select the language in the toolbar; the choice is saved locally and applies immediately, including number and date formatting. On first launch, the system language is used when supported, with English as the fallback. Below, UI labels are quoted in Polish, with an English translation.
 
 ## Installation
 
@@ -116,6 +116,7 @@ View queries on a tree of 7.8M nodes (release): children < 1 ms, treemap 14 ms, 
 
 ```bash
 pnpm test        # cargo test: model, filters, treemap (proptest), save/diff, scanner on a tempdir, volumes
+pnpm test:i18n   # localization, locale selection, formatting and error translation (Node.js 22.18+ or 24+)
 pnpm typecheck   # tsc
 pnpm lint        # eslint + cargo clippy -D warnings
 ```
@@ -188,3 +189,13 @@ scripts/
 ```
 
 Each scan has its own tree (`Arc<RwLock<Tree>>`), so a cancelled scan that is still finishing does not corrupt a new one. Progress is emitted every 250 ms (`scan://progress`). The UI refreshes the tree on every event and the treemap less often (every 1.2 s), because the layout is more expensive.
+
+### Translating the interface
+
+UI strings use the original Polish text as keys in `src/i18n/general.ts`,
+`controls.ts` and `panels.ts`, each with German (`de`) and English (`en`) values.
+Use `t(source, { name: value })` for named placeholders and `useLocale()` in
+components that display translated or formatted values. Do not translate file
+names, paths, release notes or operating-system error details. Backend-owned
+messages are localized at the display boundary by `src/i18n/errors.ts`.
+Run `pnpm test:i18n`, `pnpm typecheck` and `pnpm exec eslint src` after changes.

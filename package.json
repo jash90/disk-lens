@@ -9,6 +9,7 @@
     "typecheck": "tsc -b --pretty",
     "lint": "eslint src && cd src-tauri && cargo clippy --all-targets -- -D warnings",
     "test": "cd src-tauri && cargo test",
+    "test:i18n": "node --test --experimental-strip-types tests/*.test.ts",
     "tauri": "tauri",
     "build:debug": "tauri build --debug --features mcp-bridge --config '{\"app\":{\"withGlobalTauri\":true,\"security\":{\"csp\":null}},\"bundle\":{\"createUpdaterArtifacts\":false}}'",
     "build:mac": "scripts/with-updater-key.sh tauri build --target universal-apple-darwin --bundles app,dmg",

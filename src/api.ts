@@ -1,3 +1,5 @@
+import { getLocale } from "./i18n";
+import { translateError } from "./i18n/errors";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
@@ -275,7 +277,5 @@ export const api = {
 
 /** Komunikat błędu z komendy Tauri (odrzucone Promise niesie string). */
 export function errorMessage(e: unknown): string {
-  if (typeof e === "string") return e;
-  if (e instanceof Error) return e.message;
-  return String(e);
+  return translateError(typeof e === "string" ? e : e instanceof Error ? e.message : String(e), getLocale());
 }

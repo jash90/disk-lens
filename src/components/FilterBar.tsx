@@ -1,3 +1,4 @@
+import { t, useLocale } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import { EMPTY_FILTER, filterActive } from "../api";
 import { useStore } from "../store";
@@ -21,6 +22,7 @@ function splitList(s: string): string[] {
 }
 
 export function FilterBar() {
+  useLocale();
   const filter = useStore((s) => s.filter);
   const setFilter = useStore((s) => s.setFilter);
   const searchFocus = useStore((s) => s.searchFocus);
@@ -62,35 +64,35 @@ export function FilterBar() {
         ref={searchRef}
         className="search"
         type="search"
-        placeholder={`Szukaj nazwy pliku (${shortcut("F")})`}
+        placeholder={t("Szukaj nazwy pliku ({shortcut})", { shortcut: shortcut("F") })}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={(e) => e.key === "Escape" && (setQuery(""), (e.target as HTMLInputElement).blur())}
       />
       <label className="field">
-        Rozmiar
+        {t("Rozmiar")}
         <select value={filter.minSize} onChange={(e) => setFilter({ ...filter, minSize: Number(e.target.value) })}>
           {MIN_SIZES.map((m) => (
             <option key={m.value} value={m.value}>
-              {m.label}
+              {t(m.label)}
             </option>
           ))}
         </select>
       </label>
       <input
         className="exts"
-        placeholder="Rozszerzenia, np. mp4, mov"
+        placeholder={t("Rozszerzenia, np. mp4, mov")}
         value={exts}
         onChange={(e) => setExts(e.target.value)}
-        title="Pokaż tylko pliki o tych rozszerzeniach"
+        title={t("Pokaż tylko pliki o tych rozszerzeniach")}
       />
-      <div className="excludes" title="Pomijane w całości (foldery lub pliki o tej nazwie)">
-        <span className="muted">Pomiń:</span>
+      <div className="excludes" title={t("Pomijane w całości (foldery lub pliki o tej nazwie)")}>
+        <span className="muted">{t("Pomiń:")}</span>
         {filter.excludes.map((x) => (
           <span key={x} className="chip">
             {x}
             <button
-              aria-label={`Usuń ${x}`}
+              aria-label={t("Usuń {name}", { name: x })}
               onClick={() => setFilter({ ...filter, excludes: filter.excludes.filter((e) => e !== x) })}
             >
               ×
@@ -100,7 +102,7 @@ export function FilterBar() {
         <input
           className="exclude-input"
           list="exclude-suggestions"
-          placeholder="nazwa…"
+          placeholder={t("nazwa…")}
           value={excludeInput}
           onChange={(e) => setExcludeInput(e.target.value)}
           onKeyDown={(e) => {
@@ -125,7 +127,7 @@ export function FilterBar() {
             setFilter(EMPTY_FILTER);
           }}
         >
-          Wyczyść filtry
+          {t("Wyczyść filtry")}
         </button>
       ) : null}
     </div>

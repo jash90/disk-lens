@@ -1,3 +1,5 @@
+import { volumeLabel } from "../i18n/volume";
+import { t, setLocale, useLocale } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import { UpdateButton } from "./Update";
 import { useVolumes } from "./Volumes";
@@ -9,7 +11,7 @@ import {
   saveScan,
   startScan,
 } from "../lib/actions";
-import { filesLabel, foldersLabel, formatBytes, formatCount, formatDuration, middleEllipsis } from "../lib/format";
+import { filesLabel, foldersLabel, formatBytes, formatDuration, middleEllipsis } from "../lib/format";
 import { useStore } from "../store";
 import { shortcut } from "../lib/platform";
 
@@ -35,6 +37,7 @@ function Menu({ label, children }: { label: string; children: (close: () => void
 }
 
 export function Toolbar() {
+  const locale = useLocale();
   const scanning = useStore((s) => s.scanning);
   const progress = useStore((s) => s.progress);
   const info = useStore((s) => s.info);
@@ -46,10 +49,10 @@ export function Toolbar() {
   return (
     <header className="toolbar">
       <div className="tb-group">
-        <button className="btn primary" onClick={() => chooseAndScan(cross)} title={`Skanuj folder (${shortcut("O")})`}>
-          Skanuj folder…
+        <button className="btn primary" onClick={() => chooseAndScan(cross)} title={t("Skanuj folder ({shortcut})", { shortcut: shortcut("O") })}>
+          {t("Skanuj folder…")}
         </button>
-        <Menu label="Wolumen">
+        <Menu label={t("Wolumen")}>
           {(close) => (
             <>
               {volumes.map((v) => (
@@ -61,19 +64,19 @@ export function Toolbar() {
                     startScan(v.path, cross);
                   }}
                 >
-                  <span>{v.name}</span>
+                  <span>{volumeLabel(v.name, v.path)}</span>
                   <span className="muted">
                     {formatBytes(v.total - v.free)} / {formatBytes(v.total)}
                   </span>
                 </button>
               ))}
-              {volumes.length === 0 ? <div className="menu-note">Brak wolumenów</div> : null}
+              {volumes.length === 0 ? <div className="menu-note">{t("Brak wolumenów")}</div> : null}
             </>
           )}
         </Menu>
-        <label className="check" title="Wchodź do punktów montowania innych dysków i obrazów">
+        <label className="check" title={t("Wchodź do punktów montowania innych dysków i obrazów")}>
           <input type="checkbox" checked={cross} onChange={(e) => setCross(e.target.checked)} />
-          Inne wolumeny
+          {t("Inne wolumeny")}
         </label>
       </div>
 
@@ -82,30 +85,29 @@ export function Toolbar() {
           <>
             <span className="spinner" aria-hidden />
             <span className="stat">
-              <b>{formatCount(progress.files)}</b> plików · <b>{formatBytes(progress.bytes)}</b> ·{" "}
+              <b>{filesLabel(progress.files)}</b> · <b>{formatBytes(progress.bytes)}</b> ·{" "}
               {formatDuration(progress.elapsedMs)}
             </span>
             <span className="current" title={progress.current}>
               {middleEllipsis(progress.current, 70)}
             </span>
             <button className="btn danger" onClick={cancelScan}>
-              Anuluj
+              {t("Anuluj")}
             </button>
           </>
         ) : scanning ? (
           <>
             <span className="spinner" aria-hidden />
-            <span className="stat">Rozpoczynam skan…</span>
+            <span className="stat">{t("Rozpoczynam skan…")}</span>
             <button className="btn danger" onClick={cancelScan}>
-              Anuluj
+              {t("Anuluj")}
             </button>
           </>
         ) : progress?.cancelled ? (
-          <span className="stat warn-text">Skan anulowany – wyniki są częściowe.</span>
+          <span className="stat warn-text">{t("Skan anulowany – wyniki są częściowe.")}</span>
         ) : progress?.done ? (
           <span className="stat">
-            Gotowe: {filesLabel(progress.files)}, {foldersLabel(progress.dirs)} w{" "}
-            {formatDuration(progress.elapsedMs)}
+            {t("Gotowe: {files}, {folders} w {duration}", { files: filesLabel(progress.files), folders: foldersLabel(progress.dirs), duration: formatDuration(progress.elapsedMs) })}
           </span>
         ) : info ? (
           <span className="stat">{info.rootPath}</span>
@@ -113,52 +115,63 @@ export function Toolbar() {
       </div>
 
       <div className="tb-group">
-        <div className="seg" role="group" aria-label="Tryb rozmiaru">
+        <div className="seg" role="group" aria-label={t("Tryb rozmiaru")}>
           <button
             className={mode === "alloc" ? "on" : ""}
             onClick={() => setMode("alloc")}
-            title="Miejsce faktycznie zajęte na dysku (bloki). Tak liczy „du”."
+            title={t("Miejsce faktycznie zajęte na dysku (bloki). Tak liczy „du”.")}
           >
-            Zajęte
+            {t("Zajęte")}
           </button>
           <button
             className={mode === "logical" ? "on" : ""}
             onClick={() => setMode("logical")}
-            title="Rozmiar logiczny plików. Pliki rzadkie, skompresowane i klony (APFS, Btrfs) mogą mieć go większy niż zajęte miejsce."
+            title={t("Rozmiar logiczny plików. Pliki rzadkie, skompresowane i klony (APFS, Btrfs) mogą mieć go większy niż zajęte miejsce.")}
           >
-            Logiczny
+            {t("Logiczny")}
           </button>
         </div>
         <span
           className="info-dot"
           title={
-            "Suma może różnić się od zajętości pokazywanej przez system: klony plików (APFS, Btrfs) dzielą bloki " +
-            "i są tu liczone przy każdej kopii, pliki rzadkie zajmują mniej niż ich rozmiar logiczny, a migawki " +
-            "i pliki systemowe nie są widoczne w folderach."
+            t("Suma może różnić się od zajętości pokazywanej przez system: klony plików (APFS, Btrfs) dzielą bloki i są tu liczone przy każdej kopii, pliki rzadkie zajmują mniej niż ich rozmiar logiczny, a migawki i pliki systemowe nie są widoczne w folderach.")
           }
         >
           ⓘ
         </span>
+        <select
+          className="btn"
+          aria-label={t("Język")}
+          value={locale}
+          onChange={(e) => {
+            const next = e.target.value;
+            if (next === "pl" || next === "de" || next === "en") setLocale(next);
+          }}
+        >
+          <option value="pl">Polski</option>
+          <option value="de">Deutsch</option>
+          <option value="en">English</option>
+        </select>
         <UpdateButton />
-        <Menu label="Plik">
+        <Menu label={t("Plik")}>
           {(close) => (
             <>
               <button className="menu-item" disabled={!info || scanning} onClick={() => (close(), saveScan())}>
-                Zapisz skan…
+                {t("Zapisz skan…")}
               </button>
               <button className="menu-item" onClick={() => (close(), loadScan())}>
-                Wczytaj skan…
+                {t("Wczytaj skan…")}
               </button>
               <div className="menu-sep" />
               <button className="menu-item" disabled={!info} onClick={() => (close(), exportView("csv"))}>
-                Eksportuj widok do CSV…
+                {t("Eksportuj widok do CSV…")}
               </button>
               <button className="menu-item" disabled={!info} onClick={() => (close(), exportView("json"))}>
-                Eksportuj widok do JSON…
+                {t("Eksportuj widok do JSON…")}
               </button>
               <div className="menu-sep" />
               <button className="menu-item" onClick={() => (close(), useStore.getState().setUpdateDialog("check"))}>
-                Sprawdź aktualizacje…
+                {t("Sprawdź aktualizacje…")}
               </button>
             </>
           )}

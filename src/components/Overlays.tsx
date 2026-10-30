@@ -6,8 +6,10 @@ import { useStore, useViewArgs } from "../store";
 import { REVEAL_LABEL, shortcut } from "../lib/platform";
 import { DiskMini } from "./DiskPanel";
 import { useVolumes, VolumeTile } from "./Volumes";
+import { t, useLocale } from "../i18n";
 
 export function ContextMenu() {
+  useLocale();
   const menu = useStore((s) => s.menu);
   const openMenu = useStore((s) => s.openMenu);
   const navigate = useStore((s) => s.navigate);
@@ -50,43 +52,44 @@ export function ContextMenu() {
       {node ? <div className="menu-title">{node.name}</div> : null}
       {isDir ? (
         <button className="menu-item" onClick={run(() => navigate(menu.id))}>
-          {node?.kind === "package" ? "Wejdź do środka pakietu" : "Otwórz jako korzeń widoku"}
+          {t(node?.kind === "package" ? "Wejdź do środka pakietu" : "Otwórz jako korzeń widoku")}
         </button>
       ) : null}
       <button className="menu-item" onClick={run(() => reveal(menu.id))}>
-        {REVEAL_LABEL}
+        {t(REVEAL_LABEL)}
       </button>
       <button className="menu-item" onClick={run(() => copyPath(menu.id))}>
-        Kopiuj ścieżkę
+        {t("Kopiuj ścieżkę")}
       </button>
       <button className="menu-item" onClick={run(() => openTerminal(menu.id))}>
-        Otwórz w Terminalu
+        {t("Otwórz w Terminalu")}
       </button>
       {isDir ? (
         <button className="menu-item" disabled={scanning} onClick={run(() => rescan(menu.id))}>
-          Przeskanuj ponownie
+          {t("Przeskanuj ponownie")}
         </button>
       ) : null}
       <div className="menu-sep" />
       <button className="menu-item danger" disabled={scanning} onClick={run(() => setTrashTarget(menu.id))}>
-        Przenieś do Kosza…
+        {t("Przenieś do Kosza…")}
       </button>
     </div>
   );
 }
 
 export function ConfirmTrashDialog() {
+  useLocale();
   const id = useStore((s) => s.trashTarget);
   const setTrashTarget = useStore((s) => s.setTrashTarget);
   const [check, setCheck] = useState<TrashCheck | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     setCheck(null);
     setError(null);
     if (id === null) return;
-    api.trashCheck(id).then(setCheck).catch((e) => setError(errorMessage(e)));
+    api.trashCheck(id).then(setCheck).catch((e) => setError(() => e));
   }, [id]);
 
   useEffect(() => {
@@ -103,24 +106,23 @@ export function ConfirmTrashDialog() {
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={(e) => e.key === "Escape" && setTrashTarget(null)}
       >
-        <h2 id="trash-title">Przenieść do Kosza?</h2>
-        {error ? <p className="error">{error}</p> : null}
+        <h2 id="trash-title">{t("Przenieść do Kosza?")}</h2>
+        {error ? <p className="error">{errorMessage(error)}</p> : null}
         {check ? (
           <>
             <p className="path-box">{check.path}</p>
             <p>
-              Zwolni ok. <b>{formatBytes(check.alloc)}</b>
-              {check.files > 1 ? ` (${filesLabel(check.files)})` : ""}. Element trafi do Kosza – możesz go stamtąd
-              przywrócić.
+              {t("Zwolni ok.")} <b>{formatBytes(check.alloc)}</b>
+              {check.files > 1 ? ` (${filesLabel(check.files)})` : ""}. {t("Element trafi do Kosza – możesz go stamtąd przywrócić.")}
             </p>
-            {check.blocked ? <p className="error">Zablokowane: {check.blocked}</p> : null}
+            {check.blocked ? <p className="error">{t("Zablokowane: {reason}", { reason: errorMessage(check.blocked) })}</p> : null}
           </>
         ) : !error ? (
-          <p>Sprawdzam…</p>
+          <p>{t("Sprawdzam…")}</p>
         ) : null}
         <div className="modal-actions">
           <button className="btn" onClick={() => setTrashTarget(null)}>
-            Anuluj
+            {t("Anuluj")}
           </button>
           <button
             ref={confirmRef}
@@ -128,7 +130,7 @@ export function ConfirmTrashDialog() {
             disabled={!check || !!check.blocked}
             onClick={() => confirmTrash(id)}
           >
-            Przenieś do Kosza
+            {t("Przenieś do Kosza")}
           </button>
         </div>
       </div>
@@ -137,6 +139,7 @@ export function ConfirmTrashDialog() {
 }
 
 export function Toasts() {
+  useLocale();
   const toasts = useStore((s) => s.toasts);
   const dismiss = useStore((s) => s.dismissToast);
   const busy = useStore((s) => s.busy);
@@ -144,12 +147,12 @@ export function Toasts() {
     <div className="toasts" aria-live="polite">
       {busy ? (
         <div className="toast info">
-          <span className="spinner" /> {busy}
+          <span className="spinner" /> {t(busy)}
         </div>
       ) : null}
-      {toasts.map((t) => (
-        <div key={t.id} className={`toast ${t.kind}`} onClick={() => dismiss(t.id)}>
-          {t.text}
+      {toasts.map((toast) => (
+        <div key={toast.id} className={`toast ${toast.kind}`} onClick={() => dismiss(toast.id)}>
+          {t(toast.text)}
         </div>
       ))}
     </div>
@@ -157,16 +160,16 @@ export function Toasts() {
 }
 
 export function Welcome() {
+  useLocale();
   const volumes = useVolumes();
   return (
     <div className="welcome">
-      <h1>Co zajmuje miejsce na dysku?</h1>
+      <h1>{t("Co zajmuje miejsce na dysku?")}</h1>
       <p className="muted">
-        Wybierz folder albo cały wolumen. Zobaczysz treemapę (każdy plik to prostokąt o polu proporcjonalnym do rozmiaru) i drzewo
-        folderów z sumami.
+        {t("Wybierz folder albo cały wolumen. Zobaczysz treemapę (każdy plik to prostokąt o polu proporcjonalnym do rozmiaru) i drzewo folderów z sumami.")}
       </p>
       <button className="btn primary big" onClick={() => chooseAndScan(false)}>
-        Wybierz folder… <kbd>{shortcut("O")}</kbd>
+        {t("Wybierz folder…")} <kbd>{shortcut("O")}</kbd>
       </button>
       <div className="volumes">
         {volumes.map((v) => (
@@ -178,6 +181,7 @@ export function Welcome() {
 }
 
 export function DetailsBar() {
+  useLocale();
   const selected = useStore((s) => s.selected);
   const version = useStore((s) => s.version);
   const scanning = useStore((s) => s.scanning);
@@ -205,7 +209,7 @@ export function DetailsBar() {
           <span className="muted">
             {info.rootPath} · {formatBytes(view.mode === "alloc" ? info.alloc : info.logical)} · {filesLabel(info.files)} ·{" "}
             {foldersLabel(info.dirs)}
-            {info.skipped ? ` · ${formatCount(info.skipped)} pominiętych` : ""}
+            {info.skipped ? ` · ${t("{count} pominiętych", { count: formatCount(info.skipped) })}` : ""}
           </span>
         ) : null}
         <DiskMini />
@@ -218,28 +222,28 @@ export function DetailsBar() {
       <div className="d-main">
         <strong title={node.path}>{middleEllipsis(node.path, 120)}</strong>
         <span className="muted">
-          {formatBytes(node.size)} ({view.mode === "alloc" ? `logicznie ${formatBytes(node.logical)}` : `zajęte ${formatBytes(node.alloc)}`})
-          {isDir ? ` · ${filesLabel(node.files)} · ${foldersLabel(node.dirs)}` : ""} · zmieniono{" "}
+          {formatBytes(node.size)} ({view.mode === "alloc" ? t("logicznie {size}", { size: formatBytes(node.logical) }) : t("zajęte {size}", { size: formatBytes(node.alloc) })})
+          {isDir ? ` · ${filesLabel(node.files)} · ${foldersLabel(node.dirs)}` : ""} · {t("zmieniono")}{" "}
           {formatDate(node.mtime)}
         </span>
       </div>
       <div className="d-actions">
         <button className="btn small" onClick={() => reveal(node.id)}>
-          {REVEAL_LABEL}
+          {t(REVEAL_LABEL)}
         </button>
         <button className="btn small" onClick={() => copyPath(node.id)}>
-          Kopiuj ścieżkę
+          {t("Kopiuj ścieżkę")}
         </button>
         <button className="btn small" onClick={() => openTerminal(node.id)}>
-          Terminal
+          {t("Terminal")}
         </button>
         {isDir ? (
           <button className="btn small" disabled={scanning} onClick={() => rescan(node.id)} title={shortcut("R")}>
-            Przeskanuj
+            {t("Przeskanuj")}
           </button>
         ) : null}
         <button className="btn small danger" disabled={scanning} onClick={() => setTrashTarget(node.id)} title={shortcut("⌫")}>
-          Do Kosza…
+          {t("Do Kosza…")}
         </button>
       </div>
       <DiskMini />

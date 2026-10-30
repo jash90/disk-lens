@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { api, errorMessage } from "../api";
 import { useStore } from "../store";
@@ -33,7 +34,7 @@ export async function startScan(path: string, crossVolumes: boolean) {
 }
 
 export async function chooseAndScan(crossVolumes: boolean) {
-  const path = await open({ directory: true, multiple: false, title: "Wybierz folder do przeskanowania" });
+  const path = await open({ directory: true, multiple: false, title: t("Wybierz folder do przeskanowania") });
   if (typeof path === "string") await startScan(path, crossVolumes);
 }
 
@@ -42,11 +43,11 @@ export async function cancelScan() {
 }
 
 export async function rescan(id: number) {
-  await guarded("Ponowne skanowanie…", async () => {
+  await guarded(t("Ponowne skanowanie…"), async () => {
     await api.rescanNode(id);
     await refreshInfo();
     st().bump();
-    st().toast("Przeskanowano ponownie.", "success");
+    st().toast(t("Przeskanowano ponownie."), "success");
   });
 }
 
@@ -60,59 +61,59 @@ export async function openTerminal(id: number) {
 
 export async function copyPath(id: number) {
   const p = await guarded(null, () => api.copyPath(id));
-  if (p) st().toast(`Skopiowano: ${p}`, "success");
+  if (p) st().toast(t("Skopiowano: {path}", { path: p }), "success");
 }
 
 export async function confirmTrash(id: number) {
-  const freed = await guarded("Przenoszenie do Kosza…", () => api.moveToTrash(id));
+  const freed = await guarded(t("Przenoszenie do Kosza…"), () => api.moveToTrash(id));
   if (freed === undefined) return;
   const s = st();
   if (s.selected === id) s.select(null);
   s.setTrashTarget(null);
   await refreshInfo();
   s.bump();
-  s.toast(`Przeniesiono do Kosza (${formatBytes(freed)}).`, "success");
+  s.toast(t("Przeniesiono do Kosza ({size}).", { size: formatBytes(freed) }), "success");
 }
 
 export async function exportView(format: "csv" | "json") {
   const s = st();
   const path = await save({
-    title: "Eksportuj bieżący widok",
+    title: t("Eksportuj bieżący widok"),
     defaultPath: `disk-lens.${format}`,
     filters: [{ name: format.toUpperCase(), extensions: [format] }],
   });
   if (!path) return;
-  const n = await guarded("Eksport…", () =>
+  const n = await guarded(t("Eksport…"), () =>
     api.exportView(s.root, { mode: s.mode, filter: s.filter }, s.sortKey, s.sortDesc, format, path),
   );
-  if (n !== undefined) s.toast(`Wyeksportowano ${formatCount(n)} pozycji.`, "success");
+  if (n !== undefined) s.toast(t("Wyeksportowano {count} pozycji.", { count: formatCount(n) }), "success");
 }
 
 export async function saveScan() {
   const path = await save({
-    title: "Zapisz wynik skanu",
+    title: t("Zapisz wynik skanu"),
     defaultPath: `skan-${new Date().toISOString().slice(0, 10)}.disklens`,
-    filters: [{ name: "Skan Disk Lens", extensions: ["disklens"] }],
+    filters: [{ name: t("Skan Disk Lens"), extensions: ["disklens"] }],
   });
   if (!path) return;
-  await guarded("Zapisywanie skanu…", async () => {
+  await guarded(t("Zapisywanie skanu…"), async () => {
     await api.saveScan(path);
-    st().toast("Zapisano skan.", "success");
+    st().toast(t("Zapisano skan."), "success");
   });
 }
 
 export async function pickScanFile(title: string): Promise<string | null> {
-  const path = await open({ title, multiple: false, filters: [{ name: "Skan Disk Lens", extensions: ["disklens"] }] });
+  const path = await open({ title, multiple: false, filters: [{ name: t("Skan Disk Lens"), extensions: ["disklens"] }] });
   return typeof path === "string" ? path : null;
 }
 
 export async function loadScan() {
-  const path = await pickScanFile("Wczytaj zapisany skan");
+  const path = await pickScanFile(t("Wczytaj zapisany skan"));
   if (!path) return;
-  await guarded("Wczytywanie skanu…", async () => {
+  await guarded(t("Wczytywanie skanu…"), async () => {
     await api.loadScan(path);
     const info = await api.treeInfo();
     st().resetForScan(info, false);
-    st().toast("Wczytano skan.", "success");
+    st().toast(t("Wczytano skan."), "success");
   });
 }

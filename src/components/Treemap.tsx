@@ -1,3 +1,4 @@
+import { t, useLocale } from "../i18n";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, TILE_DIR, TILE_REST, type NodeInfo, type Tile } from "../api";
 import { AGE_COLORS, AGE_NAMES, CATEGORY_COLORS, CATEGORY_NAMES, tileColor } from "../lib/colors";
@@ -47,6 +48,7 @@ function cssVar(name: string): string {
 }
 
 export function Treemap() {
+  useLocale();
   const root = useStore((s) => s.root);
   const version = useStore((s) => s.version);
   const scanning = useStore((s) => s.scanning);
@@ -275,9 +277,9 @@ export function Treemap() {
     if (hoverTile.kind === TILE_REST) {
       return (
         <div className="map-tip" style={{ left, top }}>
-          <strong>Drobne elementy</strong>
-          <span>zbyt małe, by narysować je osobno{hoverInfo ? ` · w „${hoverInfo.name}”` : ""}</span>
-          <span className="muted">Dwuklik powiększa folder</span>
+          <strong>{t("Drobne elementy")}</strong>
+          <span>{t("zbyt małe, by narysować je osobno")}{hoverInfo ? ` · ${t("w „{name}”", { name: hoverInfo.name })}` : ""}</span>
+          <span className="muted">{t("Dwuklik powiększa folder")}</span>
         </div>
       );
     }
@@ -286,7 +288,7 @@ export function Treemap() {
       <div className="map-tip" style={{ left, top }}>
         <strong>{hoverInfo.name}</strong>
         <span>
-          {formatBytes(hoverInfo.size)} · {formatPct(hoverInfo.pctOfRoot)} całości
+          {formatBytes(hoverInfo.size)} · {t("{percent} całości", { percent: formatPct(hoverInfo.pctOfRoot) })}
         </span>
         <span className="muted path">{hoverInfo.path}</span>
       </div>
@@ -311,28 +313,28 @@ export function Treemap() {
       >
         <canvas ref={canvasRef} />
         {tip}
-        {tiles.length === 0 && !loading ? <div className="map-empty">Brak danych do narysowania.</div> : null}
+        {tiles.length === 0 && !loading ? <div className="map-empty">{t("Brak danych do narysowania.")}</div> : null}
       </div>
       <div className="legend">
-        <div className="seg" role="group" aria-label="Kolorowanie">
+        <div className="seg" role="group" aria-label={t("Kolorowanie")}>
           <button className={colorMode === "type" ? "on" : ""} onClick={() => setColorMode("type")}>
-            Typ
+            {t("Typ")}
           </button>
           <button className={colorMode === "age" ? "on" : ""} onClick={() => setColorMode("age")}>
-            Wiek
+            {t("Wiek")}
           </button>
         </div>
         {legend.map((l) => (
           <span key={l.name} className="legend-item">
             <span className="swatch" style={{ background: l.color }} />
-            {l.name}
+            {t(l.name)}
           </span>
         ))}
         <span className="legend-item">
           <span className="swatch rest" />
-          drobne
+          {t("drobne")}
         </span>
-        <span className="legend-hint">klik: zaznacz · dwuklik: wejdź poziom niżej · Esc: wstecz · prawy: akcje</span>
+        <span className="legend-hint">{t("klik: zaznacz · dwuklik: wejdź poziom niżej · Esc: wstecz · prawy: akcje")}</span>
       </div>
     </div>
   );
