@@ -1,4 +1,5 @@
 pub mod actions;
+pub mod cache;
 pub mod category;
 pub mod fsevents;
 pub mod listing;
@@ -33,6 +34,7 @@ pub fn run() {
             commands::scan::list_volumes,
             commands::scan::scan_start,
             commands::scan::scan_cancel,
+            commands::scan::restore_last_scan,
             commands::scan::tree_info,
             commands::query::get_node,
             commands::query::get_ancestors,

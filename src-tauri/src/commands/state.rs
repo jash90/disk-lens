@@ -56,6 +56,11 @@ pub struct AppState {
     /// Last volume data (scan root, data). During a scan `tree_info` is called every 250 ms and
     /// reading purgeable space on macOS can be slow, so this copy is used then.
     pub(super) volume: Mutex<Option<(PathBuf, Option<VolumeInfo>)>>,
+    /// Held by the thread of a scan or refresh while it works, so that the next one starts only
+    /// after a cancelled one has really stopped.
+    pub(super) run_lock: Arc<Mutex<()>>,
+    /// Scan number of a tree that was restored from the cache and not checked against the disk yet.
+    pub(super) restored: AtomicU64,
 }
 
 impl AppState {
@@ -83,13 +88,18 @@ impl AppState {
     }
 
     pub(super) fn set_tree(&self, tree: Tree) -> (u64, SharedTree) {
-        let seq = self.scan_seq.fetch_add(1, Relaxed) + 1;
         let shared = Arc::new(RwLock::new(tree));
-        *self.tree.write() = Some((seq, shared.clone()));
+        (self.adopt_tree(shared.clone()), shared)
+    }
+
+    /// Makes `shared` the current tree under a new scan number.
+    pub(super) fn adopt_tree(&self, shared: SharedTree) -> u64 {
+        let seq = self.scan_seq.fetch_add(1, Relaxed) + 1;
+        *self.tree.write() = Some((seq, shared));
         *self.cache.lock() = None;
         *self.stale_index.lock() = None;
         *self.stale_list.lock() = None;
-        (seq, shared)
+        seq
     }
 
     fn sums(&self, seq: u64, tree: &Tree, args: &ViewArgs) -> Option<Arc<FilteredSums>> {
