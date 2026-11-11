@@ -23,6 +23,8 @@ pub const MAX_ID_DISTANCE: u64 = 4_000_000;
 /// More changed folders than this and a full scan is the safer choice.
 const MAX_CHANGES: usize = 150_000;
 
+const DROPPED: &str = "the system dropped events";
+
 /// Where the log of the volume holding `path` stands now. `None`: no usable log.
 pub fn position(path: &Path) -> Option<Position> {
     imp::position(path)
@@ -42,7 +44,12 @@ pub fn changes_since(root: &Path, since: &Position, timeout: Duration, give_up: 
     if now.event_id - since.event_id > MAX_ID_DISTANCE {
         return Err("too much happened since the last scan".into());
     }
-    imp::changes_since(root, since.event_id, timeout, give_up)
+    // Events can be dropped while they are handed over (the reader was too slow for a moment);
+    // the stored history is intact then, and reading it again works.
+    match imp::changes_since(root, since.event_id, timeout, give_up) {
+        Err(e) if e == DROPPED && !give_up() => imp::changes_since(root, since.event_id, timeout, give_up),
+        result => result,
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -171,7 +178,7 @@ mod imp {
                 continue;
             }
             if flag & (USER_DROPPED | KERNEL_DROPPED) != 0 {
-                c.failed = Some("the system dropped events");
+                c.failed = Some(DROPPED);
             } else if flag & IDS_WRAPPED != 0 {
                 c.failed = Some("event ids wrapped");
             } else if flag & ROOT_CHANGED != 0 {
