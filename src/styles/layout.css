@@ -1,0 +1,287 @@
+/* ---------- układ ---------- */
+
+.app {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  /* Bez tego długa ścieżka w stopce (nowrap) poszerza całą kolumnę poza okno. */
+  grid-template-columns: minmax(0, 1fr);
+  height: 100%;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.tb-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.tb-progress {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+}
+
+.tb-progress .stat {
+  white-space: nowrap;
+}
+
+.tb-progress .current {
+  color: var(--muted);
+  font: 11px ui-monospace, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.dropdown {
+  position: relative;
+}
+
+.dropdown-menu,
+.context-menu {
+  position: absolute;
+  z-index: 50;
+  min-width: 230px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 4px;
+}
+
+.dropdown-menu {
+  top: calc(100% + 4px);
+  left: 0;
+}
+
+.tb-group:last-child .dropdown-menu {
+  left: auto;
+  right: 0;
+}
+
+.context-menu {
+  position: fixed;
+}
+
+.menu-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 6px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.menu-item:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
+
+.menu-item:hover:not(:disabled) .muted {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.menu-item.danger {
+  color: var(--danger);
+}
+
+.menu-item.danger:hover:not(:disabled) {
+  background: var(--danger);
+  color: #fff;
+}
+
+.menu-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 6px;
+}
+
+.menu-title,
+.menu-note {
+  padding: 4px 10px 6px;
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+
+.subbar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 12px 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.crumbs ol {
+  display: flex;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.crumbs li {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.crumbs li + li::before {
+  content: "›";
+  color: var(--muted);
+  margin: 0 2px;
+}
+
+.crumbs li button {
+  border: 0;
+  background: none;
+  padding: 3px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crumbs li button:hover {
+  background: var(--surface-2);
+}
+
+.crumbs li button.current {
+  font-weight: 600;
+}
+
+.filterbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filterbar.active .search,
+.filterbar.active .exts {
+  border-color: var(--accent);
+}
+
+.filterbar .search {
+  width: 220px;
+}
+
+.filterbar .exts {
+  width: 190px;
+}
+
+.field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+}
+
+.excludes {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 4px 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.chip button {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: inherit;
+  padding: 0 3px;
+}
+
+.exclude-input {
+  width: 110px;
+}
+
+.split {
+  display: grid;
+  min-height: 0;
+}
+
+.pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+}
+
+.gutter {
+  cursor: col-resize;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.gutter:hover {
+  background: var(--accent-soft);
+}

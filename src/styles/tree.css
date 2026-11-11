@@ -1,0 +1,215 @@
+/* ---------- drzewo ---------- */
+
+.tree {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.tree-head,
+.tr {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) 86px 96px 84px 70px 86px;
+  align-items: center;
+}
+
+/* Wąski panel: najpierw znika kolumna folderów, potem pliki i data. */
+.tree.w-md .tree-head,
+.tree.w-md .tr {
+  grid-template-columns: minmax(150px, 1fr) 86px 96px 84px 86px;
+}
+
+.tree.w-md .c-dirs {
+  display: none;
+}
+
+.tree.w-sm .tree-head,
+.tree.w-sm .tr {
+  grid-template-columns: minmax(150px, 1fr) 86px 92px;
+}
+
+.tree.w-sm .c-files,
+.tree.w-sm .c-dirs,
+.tree.w-sm .c-date {
+  display: none;
+}
+
+.tree-head {
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.th {
+  border: 0;
+  background: none;
+  padding: 6px 8px;
+  text-align: left;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.th:disabled {
+  cursor: default;
+}
+
+.th.active {
+  color: var(--text);
+}
+
+.sort-arrow {
+  font-size: 9px;
+  margin-left: 4px;
+}
+
+.th.c-size,
+.th.c-num {
+  text-align: right;
+}
+
+.tree-body {
+  flex: 1;
+  overflow: auto;
+  outline: none;
+  position: relative;
+}
+
+.tr {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  font-variant-numeric: tabular-nums;
+  cursor: default;
+}
+
+.tr:hover {
+  background: var(--row-hover);
+}
+
+.tr.selected {
+  background: var(--row-sel);
+}
+
+.tree-body:focus .tr.selected {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.tr.hidden-file .name {
+  opacity: 0.65;
+}
+
+.tr > span {
+  padding: 0 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tr .c-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tr .c-size,
+.tr .c-num {
+  text-align: right;
+}
+
+.tr .c-size {
+  font-weight: 600;
+}
+
+.tr .c-date {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tr.more {
+  color: var(--muted);
+  font-size: 12px;
+  display: flex;
+}
+
+.chev {
+  width: 14px;
+  font-size: 8px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: transform 0.12s;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.chev.open {
+  transform: rotate(90deg);
+}
+
+.chev.invisible {
+  visibility: hidden;
+}
+
+.icon {
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.badge {
+  font-size: 11px;
+  flex-shrink: 0;
+  cursor: help;
+}
+
+.badge.warn {
+  color: var(--warn);
+}
+
+.c-pct {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bar {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  background: var(--bar-bg);
+  border-radius: 3px;
+  overflow: hidden;
+  display: block;
+}
+
+.bar .fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--bar);
+  border-radius: 3px;
+}
+
+.pct-label {
+  width: 38px;
+  text-align: right;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.empty-note,
+.panel-msg {
+  padding: 20px;
+  color: var(--muted);
+  text-align: center;
+}

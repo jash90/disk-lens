@@ -1,0 +1,271 @@
+/* ---------- prawy panel ---------- */
+
+.right {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.tabs {
+  display: flex;
+  overflow-x: auto;
+  scrollbar-width: none;
+  gap: 2px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.tabs button {
+  white-space: nowrap;
+  flex-shrink: 0;
+  border: 0;
+  background: none;
+  padding: 7px 12px;
+  cursor: pointer;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.tabs button.on {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.count {
+  background: var(--warn);
+  color: #fff;
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.tab-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.treemap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.map-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  cursor: crosshair;
+}
+
+.map-wrap canvas {
+  display: block;
+}
+
+.map-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.map-tip {
+  position: absolute;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 280px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  z-index: 5;
+}
+
+.map-tip strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-tip .path {
+  font: 11px ui-monospace, monospace;
+  word-break: break-all;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legend-hint {
+  margin-left: auto;
+}
+
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+
+.swatch.rest {
+  background: var(--map-rest);
+}
+
+.panel-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 10px 14px 20px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.panel-scroll h3 {
+  margin: 18px 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+table.list {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+table.list th {
+  text-align: left;
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: -10px;
+  background: var(--surface);
+}
+
+table.list td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+table.list tr.selected td {
+  background: var(--row-sel);
+}
+
+table.list tbody tr:hover td {
+  background: var(--row-hover);
+}
+
+table.list .num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.file-cell {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.file-cell .path,
+.path-cell {
+  font: 11px ui-monospace, monospace;
+  word-break: break-all;
+}
+
+.mini-bar {
+  height: 3px;
+  margin-top: 4px;
+  background: var(--bar-bg);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.mini-bar span {
+  display: block;
+  height: 100%;
+}
+
+.stacked {
+  display: flex;
+  height: 14px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 4px 0 8px;
+}
+
+.callout {
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.callout p {
+  margin: 0 0 8px;
+}
+
+.diff-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 10px;
+}
+
+.up {
+  color: var(--danger);
+}
+
+.down {
+  color: var(--success);
+}
+
+.status {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.status.grown,
+.status.added {
+  color: var(--danger);
+}
+
+.status.shrunk,
+.status.removed {
+  color: var(--success);
+}
