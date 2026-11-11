@@ -8,7 +8,7 @@ A disk usage analyzer for macOS, Windows and Linux in the spirit of GrandPerspec
 - **folder tree**: totals, percentage of the parent, file and folder counts, sortable by every column.
 
 On top of that:
-- tabs: largest files, breakdown by type, skipped paths, comparison of two scans, disk (capacity, free space, scan vs. disk usage);
+- tabs: largest files, stale files (things not used for a long time), breakdown by type, skipped paths, comparison of two scans, disk (capacity, free space, scan vs. disk usage);
 - filters: name, minimum size, extensions, exclusions; applied without rescanning;
 - actions: reveal in the file manager (Finder / Explorer), copy path, open a terminal, rescan a folder, move to Trash;
 - export to CSV/JSON, and saving/loading a scan as a `.disklens` file;
@@ -115,7 +115,7 @@ View queries on a tree of 7.8M nodes (release): children < 1 ms, treemap 14 ms, 
 ## Tests and quality
 
 ```bash
-pnpm test        # cargo test: model, filters, treemap (proptest), save/diff, scanner on a tempdir, volumes
+pnpm test        # cargo test: model, filters, treemap (proptest), save/diff, stale lists, batch Trash, scanner on a tempdir, volumes
 pnpm typecheck   # tsc
 pnpm lint        # eslint + cargo clippy -D warnings
 ```
@@ -148,11 +148,14 @@ The scanner tests (Unix) build a fixture tree in a temporary directory and check
 | Missing permissions | The scan continues; the paths go to the **Pominięte** (Skipped) tab with a hint about Full Disk Access. |
 | Disk tab | Capacity and free space of the volume the scan root is on (`statvfs` / `GetDiskFreeSpaceExW`; on macOS also the space available for important usage, which is what Finder shows). "Scanned vs. used" lists what the rest is made of: folders outside the scan, skipped paths, other APFS volumes in the container, snapshots, system files. |
 | Trash | Only moving to the Trash, never permanent deletion, always with confirmation. On macOS via `NSFileManager.trashItemAtURL` (no AppleScript, so no prompt to control Finder); downside: Finder does not offer "Put Back". On Windows it goes to the Recycle Bin, on Linux to the freedesktop trash. Always blocked: the scan root, the disk root, the home folder and the users folder as a whole. Additionally per system (`src-tauri/src/actions.rs`): macOS – `/System`, `/usr` (except `/usr/local`), `/bin`, `/sbin`, `/private` (except tmp); Linux – `/usr`, `/etc`, `/boot`, `/var/lib`, `/proc`, `/sys`…; Windows – `C:\Windows`, `C:\Program Files`, `C:\ProgramData`, `$Recycle.Bin`…. |
+| Stale files | The **Stare pliki** (Stale files) tab lists what has not been used for longer than a threshold (6 months to 3 years, or a number of days). An item's activity is the newest of its modification time, its creation time and, on macOS, the date it was added to the disk, so an old file downloaded last week is not stale. Three lists: files (a package counts as one item; applications are hidden unless **pokaż aplikacje** is on), folders (the topmost folder in which everything is older than the threshold; its full size is shown), and project caches (`node_modules`, `.gradle`, `__pycache__`, `.next`, `.nuxt`, `.tox`, `.pytest_cache`, `.mypy_cache`, `target` next to `Cargo.toml`, `Pods` next to `Podfile`, and each project folder under `DerivedData`) in projects where nothing is newer than the threshold. An unknown time is never treated as old. Never listed: protected paths, iCloud placeholders, further hard links, and folders that contain unread content, another volume or an iCloud placeholder. A strip above the lists shows the scanned space by age of modification. |
+| Last access time | Off by default (**uwzględnij ostatni dostęp**), and used for files only. It is unreliable: some systems do not update it (`noatime`/`relatime` mounts, Windows by default), while backups, indexing and antivirus scans do. A folder's own access time is never used, because listing the folder changes it. |
+| Trash for a selection | Items picked in the stale lists are checked again right before the move: a file must still have the modification time and size seen by the scan, and a folder must contain no new entry and no changed file. Anything else is left alone and reported with the reason. Items are moved one at a time, so one failure does not stop the rest; an item inside another selected item is moved once; at most 5000 items per run. |
 | Trash and rescan during a scan | Blocked, because the scanner would keep writing results into detached nodes. |
 | Treemap | Up to 50,000 tiles, BFS layout (the budget is spread evenly across levels). Items smaller than 1 px² are merged into grey "small items". A 1 px gap inside folders shows the structure. |
 | Filters | Computed in a single O(n) pass over the arena and cached per (filter, scan, tree generation). Name, size and extension apply to files; exclusions skip files and whole folders with the given name. |
 | Scan comparison | Matched by paths relative to the root; a list of the 1000 largest changes. |
-| `.disklens` format | `DLENS` header + postcard + zstd. The file is not a stable exchange format across versions. |
+| `.disklens` format | `DLENS` header with a format version + postcard + zstd. Version 2 adds access and creation times; version 1 files (Disk Lens 0.3.0 and older) still load, with those times unknown. Files from a newer version are refused with a message. |
 
 ## Limitations
 
@@ -175,12 +178,16 @@ src-tauri/src/
   updater.rs    update check/install (tauri-plugin-updater), startup check, readable errors
   volume.rs     volume list, capacity/free space of the scan's volume, scan vs. usage
   platform.rs   OS-specific metadata: allocated size, device, inode, iCloud
-  persist.rs    saving/loading a scan, CSV/JSON export, diff
-  commands.rs   Tauri commands (async, so they don't block the window)
+  persist.rs    saving/loading a scan (format versions), CSV/JSON export, diff
+  stale.rs      stale files, folders and project caches; age histogram
+  trash_batch.rs  Trash for many items: ancestry de-dup, protection, changed-since-scan check
+  commands/     Tauri commands (async, so they don't block the window): state, scan, query, stale, actions, persist
 src/
   api.ts        typed command and event calls
   store.ts      UI state (zustand)
-  components/   Toolbar, Breadcrumb, FilterBar, FolderTree, Treemap, Panels, DiskPanel, Volumes, Update, Overlays
+  lib/          formatting, colours, actions, useAsync, treemap canvas drawing
+  styles/       one stylesheet per area
+  components/   Toolbar, Breadcrumb, FilterBar, FolderTree, Treemap, Tabs, panels/ (one file per tab), DiskPanel, Volumes, Update, Overlays, TrashDialog, Modal
 scripts/
   build-linux.sh        Linux packages in Docker
   with-updater-key.sh   runs a build with the updater signing key in the environment
