@@ -153,9 +153,35 @@ pub struct ScanState {
     pub event_uuid: String,
 }
 
+/// Reads a list into a vector allocated once at its final size. The default grows the vector
+/// by doubling, which for the arena of a whole disk leaves hundreds of megabytes of discarded
+/// blocks behind. The bytes read are the same.
+fn vec_of_exact_size<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(deserializer: D) -> Result<Vec<T>, D::Error> {
+    struct Exact<T>(std::marker::PhantomData<T>);
+    impl<'de, T: Deserialize<'de>> serde::de::Visitor<'de> for Exact<T> {
+        type Value = Vec<T>;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("a list")
+        }
+
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Vec<T>, A::Error> {
+            let mut out = Vec::new();
+            // A damaged file may announce any length: failing to reserve is an error, not a crash.
+            out.try_reserve_exact(seq.size_hint().unwrap_or(0)).map_err(serde::de::Error::custom)?;
+            while let Some(item) = seq.next_element()? {
+                out.push(item);
+            }
+            Ok(out)
+        }
+    }
+    deserializer.deserialize_seq(Exact(std::marker::PhantomData))
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Tree {
     pub root_path: PathBuf,
+    #[serde(deserialize_with = "vec_of_exact_size")]
     pub nodes: Vec<Node>,
     pub names: String,
     pub skipped: Vec<Skipped>,
