@@ -346,6 +346,63 @@ impl Tree {
         }
     }
 
+    /// Number of nodes reachable from the root; the rest of the arena is left over from removals.
+    pub fn live_len(&self) -> usize {
+        let mut count = 0;
+        let mut stack = vec![ROOT];
+        while let Some(id) = stack.pop() {
+            count += 1;
+            stack.extend(self.children(id));
+        }
+        count
+    }
+
+    /// A copy without the nodes that were removed. Node ids change; the order of children and
+    /// the rule that a child's id is larger than its parent's are kept.
+    pub fn compacted(&self) -> Tree {
+        let mut out = Tree {
+            root_path: self.root_path.clone(),
+            nodes: Vec::new(),
+            names: String::new(),
+            skipped: self.skipped.clone(),
+            scanned_at: self.scanned_at,
+            generation: self.generation + 1,
+            state: ScanState { links: Vec::new(), ..self.state.clone() },
+        };
+        let mut new_id = vec![NONE; self.nodes.len()];
+        let copy = |out: &mut Tree, old: u32, parent: u32| -> u32 {
+            let id = out.nodes.len() as u32;
+            let name = self.name(old);
+            let node = Node { parent, first_child: NONE, next_sibling: NONE, name_off: out.names.len() as u32, ..self.node(old).clone() };
+            out.names.push_str(name);
+            out.nodes.push(node);
+            id
+        };
+        new_id[ROOT as usize] = copy(&mut out, ROOT, NONE);
+        let mut queue = std::collections::VecDeque::from([ROOT]);
+        while let Some(old_parent) = queue.pop_front() {
+            let parent = new_id[old_parent as usize];
+            let mut prev = NONE;
+            for child in self.children(old_parent) {
+                let id = copy(&mut out, child, parent);
+                if prev == NONE {
+                    out.nodes[parent as usize].first_child = id;
+                } else {
+                    out.nodes[prev as usize].next_sibling = id;
+                }
+                prev = id;
+                new_id[child as usize] = id;
+                if self.node(child).first_child != NONE {
+                    queue.push_back(child);
+                }
+            }
+        }
+        out.state.links = self.state.links.iter().filter(|l| new_id[l.id as usize] != NONE).map(|l| Link { id: new_id[l.id as usize], ..*l }).collect();
+        out.state.links.sort_unstable();
+        out.state.links.dedup();
+        out
+    }
+
     /// Detaches a node (e.g. after moving it to the Trash) and subtracts its size from the ancestors.
     pub fn detach(&mut self, id: u32) {
         let parent = self.node(id).parent;
@@ -561,6 +618,30 @@ mod tests {
         assert!(!t.is_attached(a) && !t.is_attached(g) && t.is_attached(ROOT));
         t.detach(g);
         assert_eq!((t.node(ROOT).alloc, t.node(ROOT).files), (1, 1));
+    }
+
+    #[test]
+    fn compacting_drops_removed_nodes_and_keeps_the_rest() {
+        let mut t = super::testutil::sample_tree();
+        let src = t.find_child(ROOT, "src").unwrap();
+        let main = t.find_child(src, "main.rs").unwrap();
+        t.state.links = vec![Link { dev: 1, ino: 2, id: main }, Link { dev: 1, ino: 2, id: t.find_child(ROOT, "a.mp4").unwrap() }];
+        let modules = t.find_child(ROOT, "node_modules").unwrap();
+        t.detach(modules);
+        t.detach(t.state.links[1].id);
+        assert_eq!((t.len(), t.live_len()), (7, 4));
+
+        let c = t.compacted();
+        assert_eq!((c.len(), c.live_len()), (4, 4));
+        let (a, b) = (t.node(ROOT), c.node(ROOT));
+        assert_eq!((a.alloc, a.files, a.dirs), (b.alloc, b.files, b.dirs));
+        let src = c.find_child(ROOT, "src").unwrap();
+        let names: Vec<&str> = c.children(src).map(|i| c.name(i)).collect();
+        let old_names: Vec<&str> = t.children(t.find_child(ROOT, "src").unwrap()).map(|i| t.name(i)).collect();
+        assert_eq!(names, old_names);
+        assert_eq!(c.path(c.find_child(src, "main.rs").unwrap()), PathBuf::from("/r/src/main.rs"));
+        assert_eq!(c.state.links, vec![Link { dev: 1, ino: 2, id: c.find_child(src, "main.rs").unwrap() }]);
+        assert!((1..c.len() as u32).all(|i| c.node(i).parent < i));
     }
 
     #[test]
