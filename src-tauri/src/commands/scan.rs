@@ -150,9 +150,13 @@ pub async fn rescan_node(state: State<'_, AppState>, id: u32) -> Res<()> {
     state.ensure_idle()?;
     let (_, shared) = state.current()?;
     check_id(&shared.read(), id)?;
+    // Registered like a full scan, so that Trash, save and compare wait for it too.
+    let ctl = Arc::new(ScanControl::default());
+    *state.scan.lock() = Some(ctl.clone());
     tauri::async_runtime::spawn_blocking(move || {
-        let ctl = ScanControl::default();
-        scanner::rescan(&shared, id, &ScanOptions::default(), &ctl).map_err(|e| e.to_string())
+        let result = scanner::rescan(&shared, id, &ScanOptions::default(), &ctl).map_err(|e| e.to_string());
+        ctl.done.store(true, Relaxed);
+        result
     })
     .await
     .map_err(|e| e.to_string())?
