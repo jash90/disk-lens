@@ -139,7 +139,9 @@ fn recheck_recent_files(ctx: &Ctx<'_>) -> usize {
     for (id, own) in changed {
         // Still the same item: the listing of a changed folder may have replaced it meanwhile.
         if t.is_attached(id) && t.node(id).kind == Kind::File {
-            t.update_own(id, &own, false);
+            // `lstat` does not report when a file was added to its folder, which the listing
+            // that created the node may have: the newer of the two is kept.
+            t.update_own(id, &own, true);
         }
     }
     checked
