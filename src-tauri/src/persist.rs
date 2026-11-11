@@ -1,22 +1,21 @@
 //! Saving/loading a scan, exporting a view to CSV/JSON and comparing two scans.
 
-use crate::model::{Kind, Node, SizeMode, Skipped, Tree, ROOT};
+use crate::model::{Kind, Node, ScanState, SizeMode, Skipped, Tree, ROOT};
 use crate::query::{Row, View};
 use crate::stale::StaleRow;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 /// File header: 7 fixed bytes, then the format version.
 const MAGIC_PREFIX: &[u8; 7] = b"DLENS\0\0";
-/// Version 2 added `Node::atime` and `Node::created`.
-const VERSION: u8 = 2;
-
-#[derive(Serialize, Deserialize)]
-struct SavedScan {
-    tree: Tree,
-}
+/// Version 2 added `Node::atime` and `Node::created`. Version 3 appends the `ScanState` after
+/// the tree, whose own layout did not change.
+const VERSION: u8 = 3;
+/// Removed nodes are left out of the file once they are more than this share of the tree.
+const COMPACT_ABOVE: f64 = 0.02;
 
 /// The version 1 layout (Disk Lens 0.2–0.3), frozen so that old files keep loading.
 mod v1 {
@@ -78,13 +77,23 @@ mod v1 {
 }
 
 pub fn save(tree: &Tree, path: &Path) -> Result<(), String> {
-    let bytes = postcard::to_allocvec(&SavedScan { tree: tree.clone() }).map_err(|e| e.to_string())?;
-    let compressed = zstd::encode_all(&bytes[..], 3).map_err(|e| e.to_string())?;
-    let mut out = Vec::with_capacity(compressed.len() + MAGIC_PREFIX.len() + 1);
-    out.extend_from_slice(MAGIC_PREFIX);
-    out.push(VERSION);
-    out.extend_from_slice(&compressed);
-    fs::write(path, out).map_err(|e| e.to_string())
+    let dead = tree.len() - tree.live_len();
+    let compact;
+    let tree = if dead as f64 > tree.len() as f64 * COMPACT_ABOVE {
+        compact = tree.compacted();
+        &compact
+    } else {
+        tree
+    };
+    // Straight into the compressor: a serialized tree of a whole disk is over a gigabyte.
+    let io = |e: std::io::Error| e.to_string();
+    let mut file = io::BufWriter::new(fs::File::create(path).map_err(io)?);
+    file.write_all(MAGIC_PREFIX).map_err(io)?;
+    file.write_all(&[VERSION]).map_err(io)?;
+    let mut encoder = zstd::Encoder::new(file, 3).map_err(io)?;
+    postcard::to_io(tree, &mut encoder).map_err(|e| e.to_string())?;
+    postcard::to_io(&tree.state, &mut encoder).map_err(|e| e.to_string())?;
+    encoder.finish().map_err(io)?.flush().map_err(io)
 }
 
 pub fn load(path: &Path) -> Result<Tree, String> {
@@ -98,10 +107,16 @@ pub fn load(path: &Path) -> Result<Tree, String> {
         return Err("Ten plik skanu pochodzi z nowszej wersji Disk Lens. Zaktualizuj aplikację.".into());
     }
     let raw = zstd::decode_all(&data[header..]).map_err(|e| e.to_string())?;
+    drop(data);
     let corrupt = |e: postcard::Error| format!("Uszkodzony plik skanu: {e}");
-    let mut tree = match version {
+    let mut tree: Tree = match version {
         1 => postcard::from_bytes::<v1::TreeV1>(&raw).map_err(corrupt)?.into(),
-        _ => postcard::from_bytes::<SavedScan>(&raw).map_err(corrupt)?.tree,
+        2 => postcard::from_bytes(&raw).map_err(corrupt)?,
+        _ => {
+            let (mut tree, rest) = postcard::take_from_bytes::<Tree>(&raw).map_err(corrupt)?;
+            tree.state = postcard::from_bytes::<ScanState>(rest).map_err(corrupt)?;
+            tree
+        }
     };
     tree.generation = 1;
     Ok(tree)
@@ -401,6 +416,45 @@ mod tests {
             assert_eq!((t.name(id), a.kind, a.alloc, a.files, a.mtime), (expected.name(id), b.kind, b.alloc, b.files, b.mtime));
             assert_eq!((a.atime, a.created), (0, 0), "times the old format did not record are unknown");
         }
+    }
+
+    #[test]
+    fn loads_a_file_saved_by_format_version_2() {
+        let t = load(Path::new("tests/fixtures/v2.disklens")).unwrap();
+        let expected = sample_tree();
+        assert_eq!((t.len(), t.node(ROOT).alloc, t.scanned_at), (expected.len(), 6310, expected.scanned_at));
+        for id in 0..t.len() as u32 {
+            let (a, b) = (t.node(id), expected.node(id));
+            assert_eq!((t.name(id), a.kind, a.alloc, a.files, a.mtime), (expected.name(id), b.kind, b.alloc, b.files, b.mtime));
+        }
+        assert_eq!((t.node(1).atime, t.node(1).created), (1_600_000_000, 1_500_000_000));
+        assert_eq!(t.state, ScanState::default(), "older files know nothing about the event log");
+    }
+
+    #[test]
+    fn roundtrip_keeps_the_scan_state() {
+        use crate::model::Link;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.disklens");
+        let mut t = sample_tree();
+        t.state = ScanState { links: vec![Link { dev: 7, ino: 9, id: 2 }], refreshed_at: 5, event_id: 123_456_789_012, event_uuid: "ABC".into() };
+        save(&t, &p).unwrap();
+        let loaded = load(&p).unwrap();
+        assert_eq!(loaded.state, t.state);
+        assert_eq!(loaded.len(), t.len());
+    }
+
+    #[test]
+    fn saving_leaves_out_removed_nodes() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.disklens");
+        let mut t = sample_tree();
+        let modules = t.find_child(ROOT, "node_modules").unwrap();
+        t.detach(modules);
+        save(&t, &p).unwrap();
+        let loaded = load(&p).unwrap();
+        assert_eq!((loaded.len(), loaded.node(ROOT).alloc), (t.live_len(), t.node(ROOT).alloc));
+        assert!(loaded.find_child(ROOT, "node_modules").is_none());
     }
 
     #[test]
