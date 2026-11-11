@@ -63,3 +63,37 @@ pub fn is_dataless(meta: &Metadata) -> bool {
 pub fn is_dataless(_meta: &Metadata) -> bool {
     false
 }
+
+/// Na czas skanu zgłasza systemowi pracę zainicjowaną przez użytkownika, żeby macOS nie usypiał
+/// aplikacji (App Nap), gdy okno jest schowane. Zwykły sen systemu nadal jest dozwolony.
+/// Zwolnienie przy `Drop`.
+pub struct ScanActivity {
+    #[cfg(target_os = "macos")]
+    token: objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2::runtime::NSObjectProtocol>>,
+}
+
+impl ScanActivity {
+    pub fn begin() -> Self {
+        #[cfg(target_os = "macos")]
+        {
+            use objc2_foundation::{NSActivityOptions, NSProcessInfo, NSString};
+            let token = NSProcessInfo::processInfo().beginActivityWithOptions_reason(
+                NSActivityOptions::UserInitiatedAllowingIdleSystemSleep,
+                &NSString::from_str("Skanowanie dysku"),
+            );
+            ScanActivity { token }
+        }
+        #[cfg(not(target_os = "macos"))]
+        ScanActivity {}
+    }
+}
+
+impl Drop for ScanActivity {
+    fn drop(&mut self) {
+        #[cfg(target_os = "macos")]
+        // SAFETY: `token` to obiekt zwrócony przez beginActivityWithOptions:reason:.
+        unsafe {
+            objc2_foundation::NSProcessInfo::processInfo().endActivity(&self.token)
+        };
+    }
+}

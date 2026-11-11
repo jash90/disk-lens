@@ -38,7 +38,7 @@ libc = "0.2"
 # Miejsce „dostępne dla ważnych danych” i nazwa wolumenu z Findera (NSURL).
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSDictionary", "NSError", "NSString", "NSURL", "NSValue"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSDictionary", "NSError", "NSProcessInfo", "NSString", "NSURL", "NSValue"] }
 
 [target.'cfg(windows)'.dependencies]
 # TLS systemowy (schannel) zamiast rustls – `ring` z rustls nie kompiluje się krzyżowo

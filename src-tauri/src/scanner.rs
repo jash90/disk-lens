@@ -75,8 +75,10 @@ pub struct ScanOptions {
 impl Default for ScanOptions {
     fn default() -> Self {
         let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
-        // Skan jest ograniczony przez I/O metadanych – więcej wątków niż rdzeni pomaga.
-        ScanOptions { cross_volumes: false, threads: (cores * 2).clamp(4, 32), bulk: true }
+        // Skan to głównie czas w jądrze (odczyt metadanych APFS). Powyżej ~rdzeni + 2 wątków
+        // jądro zaczyna walczyć o blokady: na 10 rdzeniach skan „/” trwał 86 s przy 12 wątkach,
+        // 93 s przy 20 i 141 s przy 4 (pomiar 2026-10-19, `examples/scan --threads`).
+        ScanOptions { cross_volumes: false, threads: (cores + 2).clamp(4, 16), bulk: true }
     }
 }
 
@@ -190,6 +192,7 @@ impl Ctx<'_> {
 
 /// Skanuje folder `start` (już obecny w drzewie, bez dzieci) i całe jego poddrzewo.
 pub fn scan(tree: &RwLock<Tree>, start: u32, opts: &ScanOptions, ctl: &ScanControl) {
+    let _activity = platform::ScanActivity::begin();
     let start_path = tree.read().path(start);
     let start_dev = fs::metadata(&start_path).ok().and_then(|m| platform::device(&m));
     let mut allowed_devs = start_dev.map(|d| vec![d]);
