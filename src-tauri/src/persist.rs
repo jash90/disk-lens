@@ -6,16 +6,23 @@ use crate::stale::StaleRow;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 /// File header: 7 fixed bytes, then the format version.
 const MAGIC_PREFIX: &[u8; 7] = b"DLENS\0\0";
 /// Version 2 added `Node::atime` and `Node::created`. Version 3 appends the `ScanState` after
-/// the tree, whose own layout did not change.
+/// the tree, whose own layout did not change, and puts the size of the longest text (8 bytes,
+/// little endian) between the version and the compressed data, so that a file can be read as
+/// a stream without holding its whole uncompressed content in memory.
 const VERSION: u8 = 3;
 /// Removed nodes are left out of the file once they are more than this share of the tree.
 const COMPACT_ABOVE: f64 = 0.02;
+/// Room on top of the longest text, so that small length differences never matter.
+const TEXT_SLACK: u64 = 4096;
+/// A header asking for a larger text buffer than this is not a real one (names are addressed
+/// with 32-bit offsets).
+const MAX_TEXT: u64 = (1 << 32) + TEXT_SLACK;
 
 /// The version 1 layout (Disk Lens 0.2–0.3), frozen so that old files keep loading.
 mod v1 {
@@ -90,6 +97,8 @@ pub fn save(tree: &Tree, path: &Path) -> Result<(), String> {
     let mut file = io::BufWriter::new(fs::File::create(path).map_err(io)?);
     file.write_all(MAGIC_PREFIX).map_err(io)?;
     file.write_all(&[VERSION]).map_err(io)?;
+    let longest_text = tree.skipped.iter().map(|s| s.path.len().max(s.error.len())).max().unwrap_or(0).max(tree.names.len()).max(tree.state.event_uuid.len());
+    file.write_all(&(longest_text as u64 + TEXT_SLACK).to_le_bytes()).map_err(io)?;
     let mut encoder = zstd::Encoder::new(file, 3).map_err(io)?;
     postcard::to_io(tree, &mut encoder).map_err(|e| e.to_string())?;
     postcard::to_io(&tree.state, &mut encoder).map_err(|e| e.to_string())?;
@@ -97,25 +106,35 @@ pub fn save(tree: &Tree, path: &Path) -> Result<(), String> {
 }
 
 pub fn load(path: &Path) -> Result<Tree, String> {
-    let data = fs::read(path).map_err(|e| e.to_string())?;
-    let header = MAGIC_PREFIX.len() + 1;
-    if data.len() < header || &data[..MAGIC_PREFIX.len()] != MAGIC_PREFIX {
+    let io = |e: std::io::Error| e.to_string();
+    let mut file = fs::File::open(path).map_err(io)?;
+    let mut header = [0u8; 8];
+    if file.read_exact(&mut header).is_err() || &header[..MAGIC_PREFIX.len()] != MAGIC_PREFIX {
         return Err("To nie jest plik skanu Disk Lens (.disklens).".into());
     }
-    let version = data[MAGIC_PREFIX.len()];
+    let version = header[MAGIC_PREFIX.len()];
     if !(1..=VERSION).contains(&version) {
         return Err("Ten plik skanu pochodzi z nowszej wersji Disk Lens. Zaktualizuj aplikację.".into());
     }
-    let raw = zstd::decode_all(&data[header..]).map_err(|e| e.to_string())?;
-    drop(data);
     let corrupt = |e: postcard::Error| format!("Uszkodzony plik skanu: {e}");
-    let mut tree: Tree = match version {
-        1 => postcard::from_bytes::<v1::TreeV1>(&raw).map_err(corrupt)?.into(),
-        2 => postcard::from_bytes(&raw).map_err(corrupt)?,
-        _ => {
-            let (mut tree, rest) = postcard::take_from_bytes::<Tree>(&raw).map_err(corrupt)?;
-            tree.state = postcard::from_bytes::<ScanState>(rest).map_err(corrupt)?;
-            tree
+    let mut tree: Tree = if version >= 3 {
+        // Decompressed and decoded piece by piece; only the texts need a buffer of their own.
+        let mut size = [0u8; 8];
+        file.read_exact(&mut size).map_err(io)?;
+        let size = u64::from_le_bytes(size);
+        if size > MAX_TEXT {
+            return Err("Uszkodzony plik skanu: nieprawidłowy nagłówek.".into());
+        }
+        let mut text = vec![0u8; size as usize];
+        let reader = io::BufReader::with_capacity(1 << 20, zstd::Decoder::new(file).map_err(io)?);
+        let (mut tree, rest) = postcard::from_io::<Tree, _>((reader, &mut text)).map_err(corrupt)?;
+        tree.state = postcard::from_io::<ScanState, _>(rest).map_err(corrupt)?.0;
+        tree
+    } else {
+        let raw = zstd::decode_all(file).map_err(io)?;
+        match version {
+            1 => postcard::from_bytes::<v1::TreeV1>(&raw).map_err(corrupt)?.into(),
+            _ => postcard::from_bytes(&raw).map_err(corrupt)?,
         }
     };
     tree.generation = 1;
@@ -477,6 +496,12 @@ mod tests {
         assert!(load(&p).is_err());
         fs::write(&p, b"DLENS\0\0\x63rest").unwrap();
         assert!(load(&p).unwrap_err().contains("nowszej"));
+        let mut absurd = b"DLENS\0\0\x03".to_vec();
+        absurd.extend_from_slice(&u64::MAX.to_le_bytes());
+        fs::write(&p, absurd).unwrap();
+        assert!(load(&p).unwrap_err().contains("Uszkodzony"));
+        fs::write(&p, b"DLENS\0\0\x03\x10\0\0\0\0\0\0\0not zstd").unwrap();
+        assert!(load(&p).is_err());
     }
 
     #[test]
