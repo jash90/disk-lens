@@ -3,13 +3,20 @@ import { create } from "zustand";
 import { EMPTY_FILTER, type Filter, type Progress, type SizeMode, type SortKey, type TreeInfo, type UpdateInfo, type ViewArgs } from "./api";
 import type { ColorMode } from "./lib/colors";
 
-export type Tab = "treemap" | "top" | "types" | "skipped" | "diff" | "disk";
+export type Tab = "treemap" | "top" | "stale" | "types" | "skipped" | "diff" | "disk";
 type SelectSource = "tree" | "map" | "other";
 
 interface Toast {
   id: number;
   text: string;
   kind: "info" | "error" | "success";
+}
+
+/** What the Trash confirmation dialog is asked about. */
+export interface TrashRequest {
+  ids: number[];
+  /** Leave alone the items that changed on disk since the scan (for lists picked by date). */
+  verify: boolean;
 }
 
 interface ContextMenuState {
@@ -39,7 +46,7 @@ interface State {
   searchFocus: number;
   busy: string | null;
   toasts: Toast[];
-  trashTarget: number | null;
+  trashTarget: TrashRequest | null;
   menu: ContextMenuState | null;
   /** Znaleziona, jeszcze niezainstalowana aktualizacja. */
   update: UpdateInfo | null;
@@ -63,7 +70,7 @@ interface State {
   setBusy: (b: string | null) => void;
   toast: (text: string, kind?: Toast["kind"]) => void;
   dismissToast: (id: number) => void;
-  setTrashTarget: (id: number | null) => void;
+  setTrashTarget: (request: TrashRequest | null) => void;
   openMenu: (m: ContextMenuState | null) => void;
   setUpdate: (u: UpdateInfo | null) => void;
   setUpdateDialog: (d: "check" | "show" | null) => void;

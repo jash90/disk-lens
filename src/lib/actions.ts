@@ -1,7 +1,7 @@
 import { open, save } from "@tauri-apps/plugin-dialog";
-import { api, errorMessage } from "../api";
+import { api, errorMessage, type StaleArgs, type TrashOutcome } from "../api";
 import { useStore } from "../store";
-import { formatBytes, formatCount } from "./format";
+import { formatCount } from "./format";
 
 const st = () => useStore.getState();
 
@@ -70,27 +70,34 @@ export async function copyPath(id: number) {
   if (p) st().toast(`Skopiowano: ${p}`, "success");
 }
 
-export async function confirmTrash(id: number) {
-  const freed = await guarded("Przenoszenie do Kosza…", () => api.moveToTrash(id));
-  if (freed === undefined) return;
+/**
+ * Moves the items to the Trash and refreshes the views. Returns what happened, or `undefined`
+ * when the command itself failed (the error is shown as a toast).
+ */
+export async function moveToTrash(ids: number[], verify: boolean): Promise<TrashOutcome | undefined> {
+  const outcome = await guarded("Przenoszenie do Kosza…", () => api.moveToTrash(ids, verify));
+  if (!outcome) return undefined;
   const s = st();
-  if (s.selected === id) s.select(null);
-  s.setTrashTarget(null);
-  await refreshInfo();
-  s.bump();
-  s.toast(`Przeniesiono do Kosza (${formatBytes(freed)}).`, "success");
+  if (outcome.trashed > 0) {
+    // The selected node may be one of the moved items or lie inside one.
+    s.select(null);
+    await refreshInfo();
+    s.bump();
+  }
+  return outcome;
 }
 
-export async function exportView(format: "csv" | "json") {
+/** Exports the current view, or the given stale list when `stale` is set. */
+export async function exportView(format: "csv" | "json", stale: StaleArgs | null = null) {
   const s = st();
   const path = await save({
-    title: "Eksportuj bieżący widok",
-    defaultPath: `disk-lens.${format}`,
+    title: stale ? "Eksportuj listę" : "Eksportuj bieżący widok",
+    defaultPath: `disk-lens${stale ? "-stare" : ""}.${format}`,
     filters: [{ name: format.toUpperCase(), extensions: [format] }],
   });
   if (!path) return;
   const n = await guarded("Eksport…", () =>
-    api.exportView(s.root, { mode: s.mode, filter: s.filter }, s.sortKey, s.sortDesc, format, path),
+    api.exportView(s.root, { mode: s.mode, filter: s.filter }, s.sortKey, s.sortDesc, format, path, stale),
   );
   if (n !== undefined) s.toast(`Wyeksportowano ${formatCount(n)} pozycji.`, "success");
 }

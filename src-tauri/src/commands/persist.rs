@@ -5,6 +5,7 @@ use super::{AppState, Res};
 use crate::model::SizeMode;
 use crate::persist;
 use crate::query::{self, SortKey};
+use crate::stale::{self, StaleArgs};
 use std::path::PathBuf;
 use tauri::State;
 
@@ -18,10 +19,18 @@ pub async fn export_view(
     desc: bool,
     format: String,
     path: String,
+    stale: Option<StaleArgs>,
 ) -> Res<usize> {
+    let path = PathBuf::from(&path);
+    if let Some(args) = stale {
+        return state.with_stale(&view, root, &args, |v, found| {
+            let rows: Vec<_> = found.matches.iter().map(|m| stale::row(v.tree, root, m)).collect();
+            persist::export_stale(v, root, &rows, &format, &path)
+        });
+    }
     state.with_view(&view, root, |v| {
         let rows = query::children(v, root, sort, desc, 0, usize::MAX).rows;
-        persist::export(v, root, &rows, &format, &PathBuf::from(&path))
+        persist::export(v, root, &rows, &format, &path)
     })
 }
 

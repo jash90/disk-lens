@@ -165,11 +165,74 @@ export interface Skipped {
   error: string;
 }
 
-export interface TrashCheck {
+/** An item that was left alone, with the reason. */
+export interface TrashProblem {
   path: string;
+  reason: string;
+}
+
+export interface TrashCheck {
+  /** Items that would be moved, after dropping those inside another selected item. */
+  count: number;
   alloc: number;
   files: number;
-  blocked: string | null;
+  /** Paths of the first few items. */
+  sample: string[];
+  blocked: TrashProblem[];
+}
+
+export interface TrashOutcome {
+  freed: number;
+  trashed: number;
+  /** Left alone on purpose: protected, or changed since the scan. */
+  skipped: TrashProblem[];
+  /** The system refused to move them. */
+  failed: TrashProblem[];
+}
+
+export type StaleListKind = "files" | "folders" | "caches";
+export type StaleSort = "size" | "age" | "path" | "score";
+
+export interface StaleArgs {
+  list: StaleListKind;
+  olderThanDays: number;
+  useAccess: boolean;
+  showApps: boolean;
+  sort: StaleSort;
+  desc: boolean;
+}
+
+export interface StaleRow {
+  id: number;
+  name: string;
+  path: string;
+  kind: NodeKind;
+  cat: number;
+  size: number;
+  files: number;
+  mtime: number;
+  /** 0 when unknown. */
+  atime: number;
+  created: number;
+  /** Newest of the times that count as activity (for a folder: anywhere inside it). */
+  lastActivity: number;
+}
+
+export interface StalePage {
+  total: number;
+  totalSize: number;
+  rows: StaleRow[];
+}
+
+interface AgeBucket {
+  size: number;
+  files: number;
+}
+
+export interface AgeHistogram {
+  /** Same buckets as the treemap's age colouring, newest first. */
+  buckets: AgeBucket[];
+  unknown: AgeBucket;
 }
 
 interface DiffEntry {
@@ -248,11 +311,21 @@ export const api = {
   reveal: (id: number) => invoke<void>("reveal", { id }),
   openTerminal: (id: number) => invoke<void>("open_terminal", { id }),
   copyPath: (id: number) => invoke<string>("copy_path", { id }),
-  trashCheck: (id: number) => invoke<TrashCheck>("trash_check", { id }),
-  moveToTrash: (id: number) => invoke<number>("move_to_trash", { id }),
+  trashCheck: (ids: number[]) => invoke<TrashCheck>("trash_check_batch", { ids }),
+  moveToTrash: (ids: number[], verify: boolean) => invoke<TrashOutcome>("move_to_trash_batch", { ids, verify }),
+  staleList: (root: number, view: ViewArgs, args: StaleArgs, offset: number, limit: number) =>
+    invoke<StalePage>("stale_list", { root, view, args, offset, limit }),
+  ageHistogram: (root: number, view: ViewArgs) => invoke<AgeHistogram>("age_histogram", { root, view }),
   rescanNode: (id: number) => invoke<void>("rescan_node", { id }),
-  exportView: (root: number, view: ViewArgs, sort: SortKey, desc: boolean, format: "csv" | "json", path: string) =>
-    invoke<number>("export_view", { root, view, sort, desc, format, path }),
+  exportView: (
+    root: number,
+    view: ViewArgs,
+    sort: SortKey,
+    desc: boolean,
+    format: "csv" | "json",
+    path: string,
+    stale: StaleArgs | null = null,
+  ) => invoke<number>("export_view", { root, view, sort, desc, format, path, stale }),
   saveScan: (path: string) => invoke<void>("save_scan", { path }),
   loadScan: (path: string) => invoke<number>("load_scan", { path }),
   diffScans: (path: string, mode: SizeMode) => invoke<DiffResult>("diff_scans", { path, mode }),

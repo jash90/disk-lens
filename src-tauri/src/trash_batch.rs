@@ -12,6 +12,8 @@ use std::path::Path;
 /// More ids than this in one call is a mistake of the caller, not a selection made by hand.
 pub const MAX_ITEMS: usize = 5000;
 
+const SAMPLE_LEN: usize = 5;
+
 #[derive(Serialize, Debug, PartialEq, Eq)]
 pub struct Problem {
     pub path: String,
@@ -31,6 +33,8 @@ pub struct BatchCheck {
     pub count: u32,
     pub alloc: u64,
     pub files: u64,
+    /// Paths of the first few items that would be moved.
+    pub sample: Vec<String>,
     /// Selected items that will be left alone, with the reason.
     pub blocked: Vec<Problem>,
 }
@@ -82,6 +86,9 @@ pub fn check(tree: &Tree, ids: &[u32], home: Option<&Path>, rules: &Rules) -> Ba
             continue;
         }
         let n = tree.node(id);
+        if out.sample.len() < SAMPLE_LEN {
+            out.sample.push(tree.path(id).to_string_lossy().into_owned());
+        }
         out.count += 1;
         out.alloc += n.alloc;
         out.files += u64::from(n.files) + u64::from(!n.kind.is_dir());

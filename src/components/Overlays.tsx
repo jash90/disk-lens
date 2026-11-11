@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { api, errorMessage, isDirKind, type NodeInfo, type TrashCheck } from "../api";
-import { chooseAndScan, confirmTrash, copyPath, openTerminal, rescan, reveal, startScan } from "../lib/actions";
+import { api, isDirKind, type NodeInfo } from "../api";
+import { chooseAndScan, copyPath, openTerminal, rescan, reveal, startScan } from "../lib/actions";
 import { filesLabel, foldersLabel, formatBytes, formatCount, formatDate, middleEllipsis } from "../lib/format";
 import { useStore, useViewArgs } from "../store";
 import { REVEAL_LABEL, shortcut } from "../lib/platform";
 import { useAsync } from "../lib/useAsync";
 import { DiskMini } from "./DiskPanel";
-import { Modal } from "./Modal";
 import { useVolumes, VolumeTile } from "./Volumes";
 
 export function ContextMenu() {
@@ -70,63 +69,10 @@ export function ContextMenu() {
         </button>
       ) : null}
       <div className="menu-sep" />
-      <button className="menu-item danger" disabled={scanning} onClick={run(() => setTrashTarget(menu.id))}>
+      <button className="menu-item danger" disabled={scanning} onClick={run(() => setTrashTarget({ ids: [menu.id], verify: false }))}>
         Przenieś do Kosza…
       </button>
     </div>
-  );
-}
-
-export function ConfirmTrashDialog() {
-  const id = useStore((s) => s.trashTarget);
-  const setTrashTarget = useStore((s) => s.setTrashTarget);
-  const [check, setCheck] = useState<TrashCheck | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const confirmRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    setCheck(null);
-    setError(null);
-    if (id === null) return;
-    api.trashCheck(id).then(setCheck).catch((e) => setError(errorMessage(e)));
-  }, [id]);
-
-  useEffect(() => {
-    if (check && !check.blocked) confirmRef.current?.focus();
-  }, [check]);
-
-  if (id === null) return null;
-  return (
-    <Modal titleId="trash-title" role="alertdialog" onClose={() => setTrashTarget(null)}>
-    <h2 id="trash-title">Przenieść do Kosza?</h2>
-      {error ? <p className="error">{error}</p> : null}
-      {check ? (
-        <>
-          <p className="path-box">{check.path}</p>
-          <p>
-            Zwolni ok. <b>{formatBytes(check.alloc)}</b>
-            {check.files > 1 ? ` (${filesLabel(check.files)})` : ""}. Element trafi do Kosza – możesz go stamtąd
-            przywrócić.
-          </p>
-          {check.blocked ? <p className="error">Zablokowane: {check.blocked}</p> : null}
-        </>
-      ) : !error ? (
-        <p>Sprawdzam…</p>
-      ) : null}
-      <div className="modal-actions">
-        <button className="btn" onClick={() => setTrashTarget(null)}>
-          Anuluj
-        </button>
-        <button
-          ref={confirmRef}
-          className="btn danger"
-          disabled={!check || !!check.blocked}
-          onClick={() => confirmTrash(id)}
-        >
-          Przenieś do Kosza
-        </button>
-      </div>
-    </Modal>
   );
 }
 
@@ -223,7 +169,7 @@ export function DetailsBar() {
             Przeskanuj
           </button>
         ) : null}
-        <button className="btn small danger" disabled={scanning} onClick={() => setTrashTarget(node.id)} title={shortcut("⌫")}>
+        <button className="btn small danger" disabled={scanning} onClick={() => setTrashTarget({ ids: [node.id], verify: false })} title={shortcut("⌫")}>
           Do Kosza…
         </button>
       </div>

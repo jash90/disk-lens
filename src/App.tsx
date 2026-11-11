@@ -3,7 +3,8 @@ import { api } from "./api";
 import { Breadcrumb } from "./components/Breadcrumb";
 import { FilterBar } from "./components/FilterBar";
 import { FolderTree } from "./components/FolderTree";
-import { ConfirmTrashDialog, ContextMenu, DetailsBar, Toasts, Welcome } from "./components/Overlays";
+import { ContextMenu, DetailsBar, Toasts, Welcome } from "./components/Overlays";
+import { ConfirmTrashDialog } from "./components/TrashDialog";
 import { Tabs } from "./components/Tabs";
 import { Toolbar } from "./components/Toolbar";
 import { UpdateDialog, useUpdateEvents } from "./components/Update";
@@ -51,7 +52,7 @@ function useShortcuts() {
       } else if (meta && e.key === "Backspace") {
         if (isTyping(e)) return;
         e.preventDefault();
-        if (s.selected !== null && !s.scanning) s.setTrashTarget(s.selected);
+        if (s.selected !== null && !s.scanning) s.setTrashTarget({ ids: [s.selected], verify: false });
       } else if ((meta && e.key === "[") || (e.key === "Escape" && !isTyping(e) && !s.menu && s.trashTarget === null)) {
         e.preventDefault();
         s.goBack();

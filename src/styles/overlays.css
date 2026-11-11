@@ -32,6 +32,22 @@
   user-select: text;
 }
 
+.trash-problems ul {
+  margin: 4px 0;
+  padding-left: 18px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.trash-problems .path {
+  font: 11px ui-monospace, monospace;
+  word-break: break-all;
+}
+
+.trash-problems p {
+  margin: 8px 0 0;
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;

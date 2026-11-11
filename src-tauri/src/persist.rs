@@ -2,6 +2,7 @@
 
 use crate::model::{Kind, Node, SizeMode, Skipped, Tree, ROOT};
 use crate::query::{Row, View};
+use crate::stale::StaleRow;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -154,10 +155,48 @@ pub fn export(view: &View, root: u32, rows: &[Row], format: &str, path: &Path) -
             percent: format!("{:.2}", r.pct),
         })
         .collect();
+    write_records(view, root, &records, format, path)
+}
+
+#[derive(Serialize)]
+struct StaleExportRow<'a> {
+    name: &'a str,
+    path: String,
+    kind: &'a str,
+    size: u64,
+    files: u32,
+    modified: String,
+    accessed: String,
+    created: String,
+    last_activity: String,
+}
+
+/// Export of a stale list (see [`crate::stale`]). Unknown times are left empty.
+pub fn export_stale(view: &View, root: u32, rows: &[StaleRow], format: &str, path: &Path) -> Result<usize, String> {
+    let date = |ts: i64| if ts > 0 { iso_date(ts) } else { String::new() };
+    let records: Vec<StaleExportRow> = rows
+        .iter()
+        .map(|r| StaleExportRow {
+            name: &r.name,
+            path: view.tree.path(r.id).to_string_lossy().into_owned(),
+            kind: r.kind,
+            size: r.size,
+            files: r.files,
+            modified: date(r.mtime),
+            accessed: date(i64::from(r.atime)),
+            created: date(i64::from(r.created)),
+            last_activity: date(r.last_activity),
+        })
+        .collect();
+    write_records(view, root, &records, format, path)
+}
+
+fn write_records<T: Serialize>(view: &View, root: u32, records: &[T], format: &str, path: &Path) -> Result<usize, String> {
+    let tree = view.tree;
     match format {
         "csv" => {
             let mut w = csv::Writer::from_path(path).map_err(|e| e.to_string())?;
-            for r in &records {
+            for r in records {
                 w.serialize(r).map_err(|e| e.to_string())?;
             }
             w.flush().map_err(|e| e.to_string())?;
@@ -165,17 +204,17 @@ pub fn export(view: &View, root: u32, rows: &[Row], format: &str, path: &Path) -
         "json" => {
             #[derive(Serialize)]
             #[serde(rename_all = "camelCase")]
-            struct Doc<'a> {
+            struct Doc<'a, T> {
                 root: String,
                 size_mode: SizeMode,
                 total: u64,
-                items: &'a [ExportRow<'a>],
+                items: &'a [T],
             }
             let doc = Doc {
                 root: tree.path(root).to_string_lossy().into_owned(),
                 size_mode: view.mode,
                 total: view.size(root),
-                items: &records,
+                items: records,
             };
             let s = serde_json::to_string_pretty(&doc).map_err(|e| e.to_string())?;
             fs::write(path, s).map_err(|e| e.to_string())?;
@@ -310,6 +349,23 @@ mod tests {
         assert_eq!(doc["items"][1]["name"], "a.mp4");
 
         assert!(export(&v, ROOT, &rows, "xml", &json_path).is_err());
+    }
+
+    #[test]
+    fn stale_export_leaves_unknown_times_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let t = sample_tree();
+        let v = View::new(&t, SizeMode::Alloc, None);
+        let id = t.children(ROOT).find(|&c| t.name(c) == "a.mp4").unwrap();
+        let m = crate::stale::Match { id, size: 1000, activity: t.node(id).mtime };
+        let rows = [crate::stale::row(&t, ROOT, &m)];
+        let path = dir.path().join("stale.csv");
+        assert_eq!(export_stale(&v, ROOT, &rows, "csv", &path).unwrap(), 1);
+        let csv = fs::read_to_string(&path).unwrap();
+        let mut lines = csv.lines();
+        assert_eq!(lines.next().unwrap(), "name,path,kind,size,files,modified,accessed,created,last_activity");
+        let line = lines.next().unwrap();
+        assert!(line.starts_with("a.mp4,/r/a.mp4,file,1000,0,1970-") && line.contains("Z,,,1970-"), "{line}");
     }
 
     #[test]

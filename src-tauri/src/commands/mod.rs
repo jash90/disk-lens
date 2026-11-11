@@ -7,6 +7,7 @@ pub mod actions;
 pub mod persist;
 pub mod query;
 pub mod scan;
+pub mod stale;
 mod state;
 
 pub use state::AppState;

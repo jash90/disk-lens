@@ -1,10 +1,8 @@
-//! Actions on a single node: reveal, terminal, clipboard, Trash.
+//! Actions on nodes: reveal, terminal, clipboard, Trash.
 
-use super::state::check_id;
 use super::{AppState, Res};
 use crate::actions;
-use crate::model::{Tree, ROOT};
-use serde::Serialize;
+use crate::trash_batch::{self, BatchCheck, BatchOutcome};
 use std::path::PathBuf;
 use tauri::{AppHandle, State};
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -40,52 +38,30 @@ pub async fn open_privacy_settings() -> Res<()> {
     actions::open_privacy_settings()
 }
 
-/// Why `id` must not be moved to the Trash (scan root, system path…), if it must not.
-fn trash_block_reason(tree: &Tree, id: u32) -> Option<String> {
-    actions::protection_reason(&tree.path(id), &tree.root_path, actions::home_dir().as_deref(), actions::RULES)
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TrashCheck {
-    path: String,
-    alloc: u64,
-    files: u32,
-    blocked: Option<String>,
-}
-
-/// Data for the confirmation dialog (path, size, the reason it is blocked, if any).
+/// Data for the confirmation dialog: how much would be moved and what is blocked.
 #[tauri::command]
-pub async fn trash_check(state: State<'_, AppState>, id: u32) -> Res<TrashCheck> {
-    state.with_node(id, |t| {
-        let n = t.node(id);
-        Ok(TrashCheck {
-            path: t.path(id).to_string_lossy().into_owned(),
-            alloc: n.alloc,
-            files: n.files + u32::from(!n.kind.is_dir()),
-            blocked: trash_block_reason(t, id),
-        })
-    })
+pub async fn trash_check_batch(state: State<'_, AppState>, ids: Vec<u32>) -> Res<BatchCheck> {
+    check_len(&ids)?;
+    state.with_tree(|t| Ok(trash_batch::check(t, &ids, actions::home_dir().as_deref(), actions::RULES)))
 }
 
-/// Moves the item to the Trash (never deletes permanently) and subtracts it from the tree.
-/// Returns the freed bytes.
+/// Moves the items to the Trash (never deletes permanently) and subtracts them from the tree.
+/// With `verify`, items that changed on disk since the scan are left alone and reported.
 #[tauri::command]
-pub async fn move_to_trash(state: State<'_, AppState>, id: u32) -> Res<u64> {
+pub async fn move_to_trash_batch(state: State<'_, AppState>, ids: Vec<u32>, verify: bool) -> Res<BatchOutcome> {
+    check_len(&ids)?;
     state.ensure_idle()?;
     let (_, shared) = state.current()?;
-    let (path, alloc) = {
-        let t = shared.read();
-        check_id(&t, id)?;
-        if id == ROOT {
-            return Err("Nie można przenieść do Kosza korzenia skanu.".into());
-        }
-        if let Some(reason) = trash_block_reason(&t, id) {
-            return Err(format!("Zablokowane: {reason}"));
-        }
-        (t.path(id), t.node(id).alloc)
-    };
-    actions::move_to_trash(&path).map_err(|e| format!("Nie udało się przenieść do Kosza: {e}"))?;
-    shared.write().detach(id);
-    Ok(alloc)
+    tauri::async_runtime::spawn_blocking(move || {
+        trash_batch::execute(&shared, &ids, verify, actions::home_dir().as_deref(), actions::RULES, actions::move_to_trash)
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+fn check_len(ids: &[u32]) -> Res<()> {
+    if ids.len() > trash_batch::MAX_ITEMS {
+        return Err(format!("Za dużo elementów naraz (najwyżej {}).", trash_batch::MAX_ITEMS));
+    }
+    Ok(())
 }

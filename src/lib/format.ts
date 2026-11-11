@@ -35,6 +35,16 @@ export function formatDate(unixSeconds: number, short = false): string {
   return (short ? dateShort : dateFmt).format(new Date(unixSeconds * 1000));
 }
 
+/** Rough age for lists: "45 dni", "8 mies.", "3,5 roku". */
+export function formatAge(seconds: number): string {
+  const days = Math.max(0, Math.floor(seconds / 86_400));
+  if (days < 60) return `${num0.format(days)} ${plural(days, "dzień", "dni", "dni")}`;
+  if (days < 365) return `${num0.format(Math.floor(days / 30))} mies.`;
+  const years = Math.floor((days / 365) * 2) / 2;
+  if (!Number.isInteger(years)) return `${num1.format(years)} roku`;
+  return `${num0.format(years)} ${plural(years, "rok", "lata", "lat")}`;
+}
+
 export function formatDuration(ms: number): string {
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
@@ -71,4 +81,9 @@ export function filesLabel(n: number): string {
 /** „1 folder”, „3 foldery”, „12 folderów”. */
 export function foldersLabel(n: number): string {
   return `${formatCount(n)} ${plural(n, "folder", "foldery", "folderów")}`;
+}
+
+/** "1 element", "3 elementy", "12 elementów". */
+export function itemsLabel(n: number): string {
+  return `${formatCount(n)} ${plural(n, "element", "elementy", "elementów")}`;
 }
