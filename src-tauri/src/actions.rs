@@ -74,7 +74,7 @@ fn under(path: &str, prefix: &str) -> bool {
     path == prefix || path.strip_prefix(prefix).is_some_and(|rest| rest.starts_with('/'))
 }
 
-/// Zwraca powód blokady albo `None`, gdy ścieżkę wolno przenieść do Kosza.
+/// Returns why the path is blocked, or `None` when it may be moved to the Trash.
 pub fn protection_reason(path: &Path, scan_root: &Path, home: Option<&Path>, rules: &Rules) -> Option<String> {
     let p = norm(path, rules);
     let pn = |x: &str| norm(Path::new(x), rules);

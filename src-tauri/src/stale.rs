@@ -65,7 +65,8 @@ pub struct StaleArgs {
     pub older_than_days: u32,
     /// Count the last access as activity (files only; less reliable than the other times).
     pub use_access: bool,
-    /// Include application bundles, which look stale by their dates although they are in use.
+    /// Include application bundles (and the folders that hold them), which look stale by their
+    /// dates although they are in use.
     pub show_apps: bool,
     pub sort: StaleSort,
     pub desc: bool,
@@ -92,6 +93,10 @@ fn own_activity(n: &Node, use_access: bool) -> Option<i64> {
     Some(t)
 }
 
+fn is_app(n: &Node) -> bool {
+    n.kind == Kind::Package && n.cat == category::APP
+}
+
 /// For every node, the newest activity anywhere in its subtree.
 pub struct StaleIndex {
     newest: Vec<i64>,
@@ -100,15 +105,19 @@ pub struct StaleIndex {
 impl StaleIndex {
     /// One pass from the end of the arena: children come after their parents, so every node is
     /// complete by the time it is folded into its parent.
-    pub fn compute(tree: &Tree, use_access: bool) -> Self {
+    ///
+    /// Without `show_apps` an application bundle counts as "never stale", and so does every
+    /// folder that holds one: an installed app looks old by its dates although it is in use.
+    pub fn compute(tree: &Tree, use_access: bool, show_apps: bool) -> Self {
         let mut newest = vec![0i64; tree.len()];
         for i in (0..tree.len()).rev() {
             let n = &tree.nodes[i];
             if !n.is_live() {
                 continue;
             }
+            let hidden_app = !show_apps && is_app(n);
             let own = match own_activity(n, use_access) {
-                Some(t) if n.flags & DISQUALIFYING == 0 => t,
+                Some(t) if n.flags & DISQUALIFYING == 0 && !hidden_app => t,
                 _ => NEVER_STALE,
             };
             newest[i] = newest[i].max(own);
@@ -149,7 +158,7 @@ pub struct StaleResult {
 pub fn find(view: &View, root: u32, args: &StaleArgs, index: &StaleIndex, protected: &Protected, now: i64) -> StaleResult {
     let cutoff = now - i64::from(args.older_than_days) * SECS_PER_DAY;
     let mut matches = match args.list {
-        ListKind::Files => stale_files(view, root, args, index, protected, cutoff),
+        ListKind::Files => stale_files(view, root, index, protected, cutoff),
         ListKind::Folders => stale_folders(view, root, index, protected, cutoff),
         ListKind::Caches => stale_caches(view, root, index, protected, cutoff),
     };
@@ -174,17 +183,15 @@ fn walk(view: &View, root: u32, protected: &Protected, mut visit: impl FnMut(u32
     }
 }
 
-fn stale_files(view: &View, root: u32, args: &StaleArgs, index: &StaleIndex, protected: &Protected, cutoff: i64) -> Vec<Match> {
+fn stale_files(view: &View, root: u32, index: &StaleIndex, protected: &Protected, cutoff: i64) -> Vec<Match> {
     let tree = view.tree;
     let mut out = Vec::new();
     walk(view, root, protected, |_, id, zone| {
         if !is_leaf(tree, id, root) {
             return true;
         }
-        let n = tree.node(id);
-        let is_app = n.kind == Kind::Package && n.cat == category::APP;
         // A further hard link frees nothing when trashed.
-        let listed = n.flags & flags::HARDLINK_DUP == 0 && (args.show_apps || !is_app) && !protected.is_protected(id, zone);
+        let listed = tree.node(id).flags & flags::HARDLINK_DUP == 0 && !protected.is_protected(id, zone);
         if listed && index.older_than(id, cutoff) {
             out.push(Match { id, size: view.size(id), activity: index.newest[id as usize] });
         }
@@ -338,7 +345,7 @@ mod tests {
     fn names(t: &Tree, a: &StaleArgs, filter: Option<Filter>) -> Vec<String> {
         let sums = filter.map(|f| Arc::new(compute_filtered(t, &f, SizeMode::Alloc)));
         let v = View::new(t, SizeMode::Alloc, sums);
-        let index = StaleIndex::compute(t, a.use_access);
+        let index = StaleIndex::compute(t, a.use_access, a.show_apps);
         let protected = Protected::resolve(t, None, &LINUX);
         find(&v, ROOT, a, &index, &protected, NOW).matches.iter().map(|m| t.name(m.id).to_string()).collect()
     }
@@ -416,6 +423,20 @@ mod tests {
     }
 
     #[test]
+    fn folder_holding_an_app_is_listed_only_with_apps_shown() {
+        let mut t = tree();
+        let ids = t.add_children(ROOT, vec![aged("Vendor", Kind::Dir, 0, 900), aged("Papers", Kind::Dir, 0, 900)]);
+        let mut app = aged("Tool.app", Kind::Package, 0, 900);
+        app.cat = category::APP;
+        let app_id = t.add_children(ids[0], vec![app, aged("license.txt", Kind::File, 1, 900)])[0];
+        t.add_children(app_id, vec![aged("binary", Kind::File, 100, 900)]);
+        t.add_children(ids[1], vec![aged("a.pdf", Kind::File, 5, 900)]);
+        assert_eq!(names(&t, &args(ListKind::Folders, 365), None), ["Papers"]);
+        let with_apps = StaleArgs { show_apps: true, ..args(ListKind::Folders, 365) };
+        assert_eq!(names(&t, &with_apps, None), ["Vendor", "Papers"]);
+    }
+
+    #[test]
     fn unsafe_content_disqualifies_the_folders_above_it() {
         for flag in [flags::DATALESS, flags::UNREADABLE, flags::OTHER_VOLUME] {
             let mut t = tree();
@@ -447,7 +468,7 @@ mod tests {
 
         let sums = Arc::new(compute_filtered(&t, &mp4().unwrap(), SizeMode::Alloc));
         let v = View::new(&t, SizeMode::Alloc, Some(sums));
-        let index = StaleIndex::compute(&t, false);
+        let index = StaleIndex::compute(&t, false, false);
         let res = find(&v, ROOT, &args(ListKind::Folders, 365), &index, &Protected::default(), NOW);
         assert_eq!(res.matches.len(), 1);
         assert_eq!((res.matches[0].size, res.total_size), (1010, 1010), "the folder is trashed whole, so its whole size counts");
@@ -472,7 +493,7 @@ mod tests {
 
         let a = args(ListKind::Caches, 365);
         let v = View::new(&t, SizeMode::Alloc, None);
-        let index = StaleIndex::compute(&t, false);
+        let index = StaleIndex::compute(&t, false, false);
         let res = find(&v, ROOT, &a, &index, &Protected::default(), NOW);
         let found: Vec<_> = res.matches.iter().map(|m| t.rel_path(ROOT, m.id)).collect();
         assert_eq!(found, ["dormant/target", "dormant/node_modules"], "largest first, nested caches folded into the top one");

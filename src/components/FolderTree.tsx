@@ -11,7 +11,7 @@ const MAX_PAGE = 5000;
 const ROW_H = 26;
 const INDENT = 12;
 
-/** Poniżej tych szerokości chowamy kolumny liczbowe, żeby nazwy miały miejsce. */
+/** Below these widths the numeric columns are hidden, so that names have room. */
 function widthClass(w: number): string {
   if (w < 540) return "w-sm";
   if (w < 720) return "w-md";
@@ -78,14 +78,14 @@ export function FolderTree() {
     [view, sortKey, sortDesc],
   );
 
-  // Nowy korzeń / nowy skan: zwijamy wszystko.
+  // New root or new scan: collapse everything.
   useEffect(() => {
     setExpanded(new Set());
     setPages(new Map());
     limits.current.clear();
   }, [root, scanId]);
 
-  // Odświeżenie wszystkich widocznych poziomów po zmianie danych, sortowania lub filtra.
+  // Refresh every visible level after the data, the sorting or the filter changed.
   useEffect(() => {
     let alive = true;
     const ids = [root, ...expandedRef.current];
@@ -94,7 +94,7 @@ export function FolderTree() {
       const next = new Map<number, Page>();
       for (const r of res) if (r) next.set(r[0], r[1]);
       setPages(next);
-      // Foldery, które zniknęły (Kosz, reskan), wypadają z rozwiniętych.
+      // Folders that disappeared (Trash, rescan) drop out of the expanded set.
       setExpanded((prev) => {
         const keep = new Set([...prev].filter((id) => next.has(id)));
         return keep.size === prev.size ? prev : keep;
@@ -132,7 +132,7 @@ export function FolderTree() {
     [fetchPage],
   );
 
-  // Zaznaczenie z treemapy / listy: rozwiń przodków i przewiń do wiersza.
+  // Selection made in the treemap or a list: expand the ancestors and scroll to the row.
   useEffect(() => {
     if (!reveal) return;
     let alive = true;

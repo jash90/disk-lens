@@ -148,6 +148,10 @@ pub fn execute(
     for id in ids {
         let (path, alloc) = {
             let t = tree.read();
+            // A rescan may have replaced the node while earlier items were being moved.
+            if !t.is_attached(id) {
+                continue;
+            }
             let path = t.path(id);
             let refusal = block_reason(&t, id, home, rules).or_else(|| if verify { verify_unchanged(&t, id, &path).err() } else { None });
             if let Some(reason) = refusal {

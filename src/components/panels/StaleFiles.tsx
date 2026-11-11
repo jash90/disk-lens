@@ -209,24 +209,25 @@ export function StaleFiles() {
           </select>
         </div>
         <div className="stale-controls">
+          <label className="check" title={ACCESS_CAVEAT}>
+            <input type="checkbox" checked={useAccess} onChange={(e) => setUseAccess(e.target.checked)} />
+            uwzględnij ostatni dostęp
+          </label>
+          <label
+            className="check"
+            title="Aplikacje wyglądają na stare, bo liczy się data ich wydania, a nie użycia. Bez tej opcji ukryte są też foldery, które zawierają aplikację."
+          >
+            <input type="checkbox" checked={showApps} onChange={(e) => setShowApps(e.target.checked)} />
+            pokaż aplikacje
+          </label>
           {list === "files" ? (
-            <>
-              <label className="check" title={ACCESS_CAVEAT}>
-                <input type="checkbox" checked={useAccess} onChange={(e) => setUseAccess(e.target.checked)} />
-                uwzględnij ostatni dostęp
-              </label>
-              <label className="check" title="Aplikacje wyglądają na stare, bo liczy się data ich wydania, a nie użycia.">
-                <input type="checkbox" checked={showApps} onChange={(e) => setShowApps(e.target.checked)} />
-                pokaż aplikacje
-              </label>
-              <button
-                className={installersOn ? "btn small primary" : "btn small"}
-                onClick={() => setFilter({ ...filter, extensions: installersOn ? [] : INSTALLER_EXTS })}
-                title={`Filtr rozszerzeń: ${INSTALLER_EXTS.join(", ")}`}
-              >
-                Instalatory i archiwa
-              </button>
-            </>
+            <button
+              className={installersOn ? "btn small primary" : "btn small"}
+              onClick={() => setFilter({ ...filter, extensions: installersOn ? [] : INSTALLER_EXTS })}
+              title={`Filtr rozszerzeń: ${INSTALLER_EXTS.join(", ")}`}
+            >
+              Instalatory i archiwa
+            </button>
           ) : null}
           <span className="stale-spacer" />
           <button className="btn small" disabled={total === 0} onClick={() => exportView("csv", args)}>
@@ -238,7 +239,7 @@ export function StaleFiles() {
         </div>
         <p className="muted stale-hint">
           {current.hint}
-          {list === "files" && useAccess ? ` ${ACCESS_CAVEAT}` : ""}
+          {useAccess ? ` ${ACCESS_CAVEAT}` : ""}
         </p>
       </div>
 

@@ -15,7 +15,7 @@ type Status =
   | { kind: "installing"; info: UpdateInfo; done: number; total: number }
   | { kind: "error"; message: string; info?: UpdateInfo };
 
-/** Wynik cichego sprawdzenia po starcie (i każdego kolejnego) trafia do store'a. */
+/** The result of the silent check at startup (and of every later one) goes to the store. */
 export function useUpdateEvents() {
   useEffect(() => {
     const st = useStore.getState;
@@ -30,7 +30,7 @@ export function useUpdateEvents() {
   }, []);
 }
 
-/** Przycisk na pasku narzędzi, widoczny tylko gdy jest nowa wersja. */
+/** Toolbar button, visible only when a new version exists. */
 export function UpdateButton() {
   const update = useStore((s) => s.update);
   const setUpdateDialog = useStore((s) => s.setUpdateDialog);
@@ -49,7 +49,7 @@ export function UpdateDialog() {
   const scanning = useStore((s) => s.scanning);
   const [version, setVersion] = useState("");
   const [status, setStatus] = useState<Status>({ kind: "checking" });
-  /** Rośnie przy „Spróbuj ponownie” – wymusza nowe sprawdzenie serwera. */
+  /** Grows on "Spróbuj ponownie" (try again): forces a new check of the server. */
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -90,7 +90,7 @@ export function UpdateDialog() {
   const close = () => !installing && setUpdateDialog(null);
   const install = (info: UpdateInfo) => {
     setStatus({ kind: "installing", info, done: 0, total: 0 });
-    // Po udanej instalacji aplikacja startuje od nowa – tu wracamy tylko z błędem.
+    // After a successful install the app restarts, so control returns here only on error.
     api.installUpdate().catch((e) => setStatus({ kind: "error", message: errorMessage(e), info }));
   };
   const info = status.kind === "available" || status.kind === "installing" || status.kind === "error" ? status.info : undefined;

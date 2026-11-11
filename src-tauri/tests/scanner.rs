@@ -156,7 +156,7 @@ fn cancel_stops_quickly() {
     scan(&tree, ROOT, &opts(), &ctl);
     assert_eq!(tree.read().len(), 1);
 
-    // Anulowany w trakcie: kończy się szybko i drzewo jest spójne.
+    // Cancelled part-way: it ends quickly and the tree is consistent.
     let tree = RwLock::new(new_tree(d.path()).unwrap());
     let ctl = ScanControl::default();
     let started = Instant::now();
@@ -382,8 +382,8 @@ proptest! {
         for (parts, it) in &items {
             let rel: PathBuf = parts.iter().map(|p| format!("n{p}")).collect();
             let p = r.join(&rel);
-            // Kolizje (plik tam, gdzie już jest folder itp.) po prostu pomijamy. Sprawdzamy tylko
-            // przodków wewnątrz `r` – na macOS sam katalog tymczasowy leży pod symlinkiem /var.
+            // Collisions (a file where a folder already is, etc.) are simply skipped. Only the
+            // ancestors inside `r` are checked: on macOS the temporary directory itself is under the /var symlink.
             let blocked = rel.ancestors().skip(1).filter(|a| !a.as_os_str().is_empty()).any(|a| {
                 let a = r.join(a);
                 a.is_file() || a.is_symlink()

@@ -1,4 +1,4 @@
-/* ---------- drzewo ---------- */
+/* ---------- tree ---------- */
 
 .tree {
   display: flex;
@@ -14,7 +14,7 @@
   align-items: center;
 }
 
-/* Wąski panel: najpierw znika kolumna folderów, potem pliki i data. */
+/* Narrow pane: the folders column goes first, then files and the date. */
 .tree.w-md .tree-head,
 .tree.w-md .tr {
   grid-template-columns: minmax(150px, 1fr) 86px 96px 84px 86px;

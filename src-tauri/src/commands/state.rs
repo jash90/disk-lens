@@ -27,6 +27,7 @@ struct CachedSums {
 /// Newest-activity index valid for one scan and tree generation.
 struct CachedIndex {
     use_access: bool,
+    show_apps: bool,
     seq: u64,
     generation: u64,
     index: Arc<StaleIndex>,
@@ -107,15 +108,15 @@ impl AppState {
         Some(sums)
     }
 
-    fn stale_index(&self, seq: u64, tree: &Tree, use_access: bool) -> Arc<StaleIndex> {
+    fn stale_index(&self, seq: u64, tree: &Tree, use_access: bool, show_apps: bool) -> Arc<StaleIndex> {
         let mut cache = self.stale_index.lock();
         if let Some(c) = cache.as_ref() {
-            if c.use_access == use_access && c.seq == seq && c.generation == tree.generation {
+            if c.use_access == use_access && c.show_apps == show_apps && c.seq == seq && c.generation == tree.generation {
                 return c.index.clone();
             }
         }
-        let index = Arc::new(StaleIndex::compute(tree, use_access));
-        *cache = Some(CachedIndex { use_access, seq, generation: tree.generation, index: index.clone() });
+        let index = Arc::new(StaleIndex::compute(tree, use_access, show_apps));
+        *cache = Some(CachedIndex { use_access, show_apps, seq, generation: tree.generation, index: index.clone() });
         index
     }
 
@@ -141,7 +142,7 @@ impl AppState {
         let result = match cached {
             Some(r) => r,
             None => {
-                let index = self.stale_index(seq, &tree, stale_args.use_access);
+                let index = self.stale_index(seq, &tree, stale_args.use_access, stale_args.show_apps);
                 let protected = Protected::resolve(&tree, actions::home_dir().as_deref(), actions::RULES);
                 let r = Arc::new(stale::find(&view, root, stale_args, &index, &protected, now));
                 *self.stale_list.lock() = Some(CachedStale { key, seq, generation: tree.generation, result: r.clone() });

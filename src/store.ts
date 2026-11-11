@@ -29,11 +29,11 @@ interface State {
   info: TreeInfo | null;
   progress: Progress | null;
   scanning: boolean;
-  /** Korzeń bieżącego widoku (id węzła). */
+  /** Root of the current view (node id). */
   root: number;
   back: number[];
   selected: number | null;
-  /** Prośba do drzewa folderów o rozwinięcie i przewinięcie do zaznaczenia. */
+  /** Request to the folder tree to expand and scroll to the selection. */
   reveal: { id: number; seq: number } | null;
   mode: SizeMode;
   filter: Filter;
@@ -41,16 +41,16 @@ interface State {
   sortDesc: boolean;
   colorMode: ColorMode;
   tab: Tab;
-  /** Rośnie przy każdej zmianie danych – komponenty pobierają je ponownie. */
+  /** Grows on every data change; components then fetch again. */
   version: number;
   searchFocus: number;
   busy: string | null;
   toasts: Toast[];
   trashTarget: TrashRequest | null;
   menu: ContextMenuState | null;
-  /** Znaleziona, jeszcze niezainstalowana aktualizacja. */
+  /** An update that was found and is not installed yet. */
   update: UpdateInfo | null;
-  /** Okno aktualizacji: „check” sprawdza serwer po otwarciu, „show” pokazuje znane wydanie. */
+  /** Update dialog: "check" asks the server on opening, "show" presents the known release. */
   updateDialog: "check" | "show" | null;
 
   setInfo: (info: TreeInfo | null) => void;
@@ -143,7 +143,7 @@ export const useStore = create<State>((set, get) => ({
   setUpdateDialog: (updateDialog) => set({ updateDialog }),
 }));
 
-/** Parametry widoku przekazywane do każdego zapytania. */
+/** View parameters passed to every query. */
 export function useViewArgs(): ViewArgs {
   const mode = useStore((s) => s.mode);
   const filter = useStore((s) => s.filter);

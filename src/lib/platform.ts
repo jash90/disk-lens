@@ -1,11 +1,11 @@
-/** System, na którym działa aplikacja – rozpoznany z user agenta webview (WKWebView / WebView2 / WebKitGTK). */
+/** The system the app runs on, recognised from the webview user agent (WKWebView / WebView2 / WebKitGTK). */
 type Os = "macos" | "windows" | "linux";
 
 const ua = navigator.userAgent;
 export const OS: Os = ua.includes("Mac") ? "macos" : ua.includes("Windows") ? "windows" : "linux";
 export const IS_MAC = OS === "macos";
 
-/** Skrót klawiszowy z właściwym modyfikatorem: „⌘O” na macOS, „Ctrl+O” gdzie indziej. */
+/** Keyboard shortcut with the right modifier: "⌘O" on macOS, "Ctrl+O" elsewhere. */
 export function shortcut(key: string): string {
   return IS_MAC ? `⌘${key}` : `Ctrl+${key === "⌫" ? "Backspace" : key}`;
 }

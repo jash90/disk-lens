@@ -294,17 +294,6 @@ impl Tree {
             .join("/")
     }
 
-    pub fn is_ancestor_or_self(&self, ancestor: u32, id: u32) -> bool {
-        let mut cur = id;
-        while cur != NONE {
-            if cur == ancestor {
-                return true;
-            }
-            cur = self.node(cur).parent;
-        }
-        false
-    }
-
     /// Whether `id` is a node that is still part of the tree: neither it nor any folder above
     /// it was removed. (`detach` flags only the top of the removed subtree.)
     pub fn is_attached(&self, id: u32) -> bool {

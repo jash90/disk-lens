@@ -1,9 +1,9 @@
-/* ---------- układ ---------- */
+/* ---------- layout ---------- */
 
 .app {
   display: grid;
   grid-template-rows: auto auto 1fr auto;
-  /* Bez tego długa ścieżka w stopce (nowrap) poszerza całą kolumnę poza okno. */
+  /* Without this a long path in the footer (nowrap) widens the whole column past the window. */
   grid-template-columns: minmax(0, 1fr);
   height: 100%;
 }

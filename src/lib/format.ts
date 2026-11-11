@@ -4,7 +4,7 @@ const num0 = new Intl.NumberFormat("pl-PL", { maximumFractionDigits: 0 });
 const dateFmt = new Intl.DateTimeFormat("pl-PL", { dateStyle: "medium", timeStyle: "short" });
 const dateShort = new Intl.DateTimeFormat("pl-PL", { dateStyle: "short" });
 
-/** Rozmiar w systemie dziesiętnym (1 KB = 1000 B), tak jak liczy Finder i GNOME. */
+/** Size in decimal units (1 KB = 1000 B), as Finder and GNOME count. */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
   let i = 0;
@@ -51,7 +51,7 @@ export function formatDuration(ms: number): string {
   return m > 0 ? `${m} min ${s % 60} s` : `${(ms / 1000).toFixed(1).replace(".", ",")} s`;
 }
 
-/** Odmiana: 1 plik, 2 pliki, 5 plików. */
+/** Polish plural forms: 1 plik, 2 pliki, 5 plików. */
 function plural(n: number, one: string, few: string, many: string): string {
   const n10 = n % 10;
   const n100 = n % 100;
@@ -60,7 +60,7 @@ function plural(n: number, one: string, few: string, many: string): string {
   return many;
 }
 
-/** Skraca ścieżkę ze środka, zostawiając początek i koniec. */
+/** Shortens a path in the middle, keeping its start and end. */
 export function middleEllipsis(s: string, max: number): string {
   if (s.length <= max) return s;
   const keep = max - 1;
@@ -73,12 +73,12 @@ export function filesNoun(n: number): string {
   return plural(n, "plik", "pliki", "plików");
 }
 
-/** „1 plik”, „3 pliki”, „12 plików”. */
+/** "1 plik", "3 pliki", "12 plików". */
 export function filesLabel(n: number): string {
   return `${formatCount(n)} ${filesNoun(n)}`;
 }
 
-/** „1 folder”, „3 foldery”, „12 folderów”. */
+/** "1 folder", "3 foldery", "12 folderów". */
 export function foldersLabel(n: number): string {
   return `${formatCount(n)} ${plural(n, "folder", "foldery", "folderów")}`;
 }
