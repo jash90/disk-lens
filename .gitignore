@@ -1,6 +1,7 @@
 node_modules
 dist
 *.disklens
+!src-tauri/tests/fixtures/*.disklens
 .DS_Store
 *.tsbuildinfo
 release-artifacts
