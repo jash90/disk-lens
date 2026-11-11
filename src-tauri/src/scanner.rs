@@ -1,8 +1,8 @@
-//! Równoległy skaner systemu plików.
+//! Parallel file system scanner.
 //!
-//! Każde zadanie `rayon` obsługuje jeden folder: czyta wpisy z metadanymi (`listing`), wstawia
-//! dzieci do drzewa jedną operacją pod write-lockiem (sumy od razu idą w górę, więc wyniki są
-//! widoczne w trakcie skanu) i zleca podfoldery kolejnym zadaniom.
+//! Each `rayon` task handles one folder: it reads the entries with their metadata (`listing`),
+//! inserts the children into the tree in one operation under the write lock (totals go up right
+//! away, so results are visible during the scan) and hands the subfolders to further tasks.
 
 use crate::category;
 use crate::listing::{self, Backend, FileKind, RawEntry};
@@ -16,13 +16,13 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 
-/// Liczniki czasu skanu (ns, sumowane po wątkach) – zbierane tylko z funkcją `scan-stats`.
+/// Scan time counters (ns, summed over threads), collected only with the `scan-stats` feature.
 pub mod stats {
     use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 
-    /// Cały odczyt folderu (otwarcie, wpisy, metadane).
+    /// The whole folder read (open, entries, metadata).
     pub static LISTING: AtomicU64 = AtomicU64::new(0);
-    /// Pojedyncze `lstat` (ścieżka standardowa i awaryjna).
+    /// Single `lstat` calls (standard and fallback path).
     pub static METADATA: AtomicU64 = AtomicU64::new(0);
     pub static LOCK_WAIT: AtomicU64 = AtomicU64::new(0);
     pub static LOCK_HOLD: AtomicU64 = AtomicU64::new(0);
@@ -55,7 +55,7 @@ pub mod stats {
     }
 }
 
-/// Rozszerzenia folderów, które macOS pokazuje jako pojedynczy plik.
+/// Extensions of folders that macOS shows as a single file.
 const PACKAGE_EXTS: &[&str] = &[
     "app", "photoslibrary", "bundle", "framework", "plugin", "kext", "appex", "xpc", "pkg",
     "mpkg", "rtfd", "sparsebundle", "logicx", "fcpbundle", "imovielibrary", "musiclibrary",
@@ -65,19 +65,19 @@ const PACKAGE_EXTS: &[&str] = &[
 
 #[derive(Clone, Debug)]
 pub struct ScanOptions {
-    /// Czy wchodzić do punktów montowania innych wolumenów.
+    /// Whether to descend into mount points of other volumes.
     pub cross_volumes: bool,
     pub threads: usize,
-    /// Szybki odczyt folderów (`getattrlistbulk` na macOS), gdzie system plików go obsługuje.
+    /// Fast folder reads (`getattrlistbulk` on macOS) where the file system supports them.
     pub bulk: bool,
 }
 
 impl Default for ScanOptions {
     fn default() -> Self {
         let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
-        // Skan to głównie czas w jądrze (odczyt metadanych APFS). Powyżej ~rdzeni + 2 wątków
-        // jądro zaczyna walczyć o blokady: na 10 rdzeniach skan „/” trwał 86 s przy 12 wątkach,
-        // 93 s przy 20 i 141 s przy 4 (pomiar 2026-10-19, `examples/scan --threads`).
+        // A scan is mostly kernel time (reading APFS metadata). Above roughly cores + 2 threads
+        // the kernel starts contending on locks: on 10 cores a scan of "/" took 86 s with 12
+        // threads, 93 s with 20 and 141 s with 4 (measured 2026-10-19, `examples/scan --threads`).
         ScanOptions { cross_volumes: false, threads: (cores + 2).clamp(4, 16), bulk: true }
     }
 }
@@ -140,7 +140,7 @@ pub fn entry_from_raw(name: String, raw: &RawEntry) -> NewEntry {
     }
 }
 
-/// Tworzy drzewo z samym korzeniem. Korzeń musi być folderem (symlink do folderu jest rozwijany).
+/// Creates a tree with only the root. The root must be a folder (a symlink to a folder is resolved).
 pub fn new_tree(root: &Path) -> io::Result<Tree> {
     let meta = fs::metadata(root)?;
     if !meta.is_dir() {
@@ -157,11 +157,11 @@ struct Ctx<'a> {
     opts: &'a ScanOptions,
     ctl: &'a ScanControl,
     seen_inodes: Mutex<HashSet<(u64, u64)>>,
-    /// Urządzenia, na których wolno schodzić w głąb (`None` = system bez wykrywania montowań).
+    /// Devices the scan may descend on (`None` = a system without mount detection).
     allowed_devs: Option<Vec<u64>>,
-    /// Ścieżki, do których nie wchodzimy (np. /System/Volumes/Data przy skanie „/”).
+    /// Paths that are not entered (e.g. /System/Volumes/Data when scanning "/").
     skip_paths: Vec<PathBuf>,
-    /// Sposób odczytu folderów dla każdego napotkanego urządzenia (zwykle 1–2 wpisy).
+    /// How folders are read on each device met so far (usually 1–2 entries).
     backends: Mutex<Vec<(u64, Backend)>>,
 }
 
@@ -180,16 +180,16 @@ impl Ctx<'_> {
     }
 }
 
-/// Skanuje folder `start` (już obecny w drzewie, bez dzieci) i całe jego poddrzewo.
+/// Scans the folder `start` (already in the tree, without children) and its whole subtree.
 pub fn scan(tree: &RwLock<Tree>, start: u32, opts: &ScanOptions, ctl: &ScanControl) {
     let _activity = platform::ScanActivity::begin();
     let start_path = tree.read().path(start);
     let start_dev = fs::metadata(&start_path).ok().and_then(|m| platform::device(&m));
     let mut allowed_devs = start_dev.map(|d| vec![d]);
     let mut skip_paths = Vec::new();
-    // macOS: „/” to wolumen systemowy tylko do odczytu; dane użytkownika leżą na wolumenie Data
-    // i są widoczne przez firmlinki (/Users, /Applications…). Liczymy je przez firmlinki,
-    // a samego /System/Volumes/Data nie odwiedzamy, żeby nie liczyć niczego dwa razy.
+    // macOS: "/" is the read-only system volume; user data lives on the Data volume and shows
+    // through firmlinks (/Users, /Applications…). We count it through the firmlinks and do not
+    // visit /System/Volumes/Data itself, so that nothing is counted twice.
     if cfg!(target_os = "macos") && start_path == Path::new("/") {
         let data = PathBuf::from("/System/Volumes/Data");
         if let (Some(devs), Some(d)) = (allowed_devs.as_mut(), fs::metadata(&data).ok().and_then(|m| platform::device(&m))) {
@@ -210,9 +210,65 @@ pub fn scan(tree: &RwLock<Tree>, start: u32, opts: &ScanOptions, ctl: &ScanContr
         .num_threads(opts.threads.max(1))
         .thread_name(|i| format!("disk-lens-scan-{i}"))
         .build()
-        .expect("nie udało się utworzyć puli wątków");
+        .expect("failed to create the thread pool");
     let ctx_ref = &ctx;
     pool.scope(move |s| scan_dir(s, ctx_ref, start, start_path, start_dev));
+}
+
+/// One directory entry classified for insertion, plus whether the scan should descend into it.
+struct Classified {
+    entry: NewEntry,
+    /// Path and device of a subfolder to scan next.
+    descend: Option<(PathBuf, Option<u64>)>,
+}
+
+impl Ctx<'_> {
+    /// Turns a raw entry of `dir_path` into a tree entry: hard-link duplicates count as 0 bytes,
+    /// folders on another volume (or on the skip list) are marked and not entered.
+    fn classify(&self, dir_path: &Path, raw: &RawEntry) -> Classified {
+        let mut entry = entry_from_raw(raw.name.to_string_lossy().into_owned(), raw);
+        if raw.hardlink.is_some_and(|k| !self.seen_inodes.lock().insert(k)) {
+            entry.alloc = 0;
+            entry.logical = 0;
+            entry.flags |= flags::HARDLINK_DUP;
+        }
+        let mut descend = None;
+        if entry.kind.is_dir() {
+            let child_path = dir_path.join(raw.name);
+            let same_volume = match (&self.allowed_devs, raw.dev) {
+                (Some(devs), Some(d)) => devs.contains(&d),
+                _ => true,
+            };
+            let skip = self.skip_paths.iter().any(|p| p == &child_path);
+            if skip || (!same_volume && !self.opts.cross_volumes) {
+                entry.flags |= flags::OTHER_VOLUME;
+            } else {
+                descend = Some((child_path, raw.dev));
+            }
+        }
+        Classified { entry, descend }
+    }
+
+    /// Marks `dir` as unreadable and records why.
+    fn record_unreadable(&self, dir: u32, path: &Path, error: &io::Error) {
+        self.ctl.progress.errors.fetch_add(1, Relaxed);
+        let mut t = self.tree.write();
+        t.nodes[dir as usize].flags |= flags::UNREADABLE;
+        t.skipped.push(Skipped { path: path.to_string_lossy().into_owned(), error: error.to_string() });
+    }
+
+    /// Inserts the children of `dir` in one operation under the write lock. Returns their ids.
+    fn insert_children(&self, dir: u32, entries: Vec<NewEntry>, skipped: Vec<Skipped>) -> Vec<u32> {
+        let timer = stats::Timer::start();
+        let mut t = self.tree.write();
+        timer.stop(&stats::LOCK_WAIT);
+        let timer = stats::Timer::start();
+        t.skipped.extend(skipped);
+        let ids = t.add_children(dir, entries);
+        drop(t);
+        timer.stop(&stats::LOCK_HOLD);
+        ids
+    }
 }
 
 fn scan_dir<'s>(s: &rayon::Scope<'s>, ctx: &'s Ctx<'s>, dir: u32, path: PathBuf, dev: Option<u64>) {
@@ -246,40 +302,21 @@ fn scan_dir<'s>(s: &rayon::Scope<'s>, ctx: &'s Ctx<'s>, dir: u32, path: PathBuf,
                 return true;
             }
         };
-        let mut e = entry_from_raw(raw.name.to_string_lossy().into_owned(), &raw);
-
-        if raw.hardlink.is_some_and(|k| !ctx.seen_inodes.lock().insert(k)) {
-            e.alloc = 0;
-            e.logical = 0;
-            e.flags |= flags::HARDLINK_DUP;
+        let Classified { entry, descend } = ctx.classify(&path, &raw);
+        if let Some((child_path, child_dev)) = descend {
+            subdirs.push((entries.len(), child_path, child_dev));
         }
-
-        if e.kind.is_dir() {
-            let child_path = path.join(raw.name);
-            let same_volume = match (&ctx.allowed_devs, raw.dev) {
-                (Some(devs), Some(d)) => devs.contains(&d),
-                _ => true,
-            };
-            let skip = ctx.skip_paths.iter().any(|p| p == &child_path);
-            if skip || (!same_volume && !ctx.opts.cross_volumes) {
-                e.flags |= flags::OTHER_VOLUME;
-            } else {
-                subdirs.push((entries.len(), child_path, raw.dev));
-            }
-        } else {
+        if !entry.kind.is_dir() {
             files += 1;
         }
-        bytes += e.alloc;
-        entries.push(e);
+        bytes += entry.alloc;
+        entries.push(entry);
         true
     });
     timer.stop(&stats::LISTING);
 
     if let Err(e) = listed {
-        progress.errors.fetch_add(1, Relaxed);
-        let mut t = ctx.tree.write();
-        t.nodes[dir as usize].flags |= flags::UNREADABLE;
-        t.skipped.push(Skipped { path: path.to_string_lossy().into_owned(), error: e.to_string() });
+        ctx.record_unreadable(dir, &path, &e);
         return;
     }
 
@@ -290,25 +327,14 @@ fn scan_dir<'s>(s: &rayon::Scope<'s>, ctx: &'s Ctx<'s>, dir: u32, path: PathBuf,
         progress.errors.fetch_add(skipped.len() as u64, Relaxed);
     }
 
-    let ids = {
-        let timer = stats::Timer::start();
-        let mut t = ctx.tree.write();
-        timer.stop(&stats::LOCK_WAIT);
-        let timer = stats::Timer::start();
-        t.skipped.extend(skipped);
-        let ids = t.add_children(dir, entries);
-        drop(t);
-        timer.stop(&stats::LOCK_HOLD);
-        ids
-    };
-
+    let ids = ctx.insert_children(dir, entries, skipped);
     for (idx, child_path, child_dev) in subdirs {
         let id = ids[idx];
         s.spawn(move |s| scan_dir(s, ctx, id, child_path, child_dev));
     }
 }
 
-/// Pomocnicze: pełny skan folderu bez UI (testy, przykład CLI).
+/// Helper: a full scan of a folder without the UI (tests, the CLI example).
 pub fn scan_path(root: &Path, opts: &ScanOptions) -> io::Result<Tree> {
     let tree = RwLock::new(new_tree(root)?);
     let ctl = ScanControl::default();
@@ -316,7 +342,7 @@ pub fn scan_path(root: &Path, opts: &ScanOptions) -> io::Result<Tree> {
     Ok(tree.into_inner())
 }
 
-/// Ponowny skan poddrzewa `id` w istniejącym drzewie.
+/// Rescans the subtree of `id` in an existing tree.
 pub fn rescan(tree: &RwLock<Tree>, id: u32, opts: &ScanOptions, ctl: &ScanControl) -> io::Result<()> {
     let path = tree.read().path(id);
     let meta = fs::symlink_metadata(&path)?;
