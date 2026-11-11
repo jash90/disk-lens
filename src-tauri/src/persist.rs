@@ -72,7 +72,7 @@ mod v1 {
                     created: 0,
                 })
                 .collect();
-            Tree { root_path: t.root_path, nodes, names: t.names, skipped: t.skipped, scanned_at: t.scanned_at, generation: 0 }
+            Tree { root_path: t.root_path, nodes, names: t.names, skipped: t.skipped, scanned_at: t.scanned_at, generation: 0, state: Default::default() }
         }
     }
 }

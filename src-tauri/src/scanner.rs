@@ -7,7 +7,7 @@
 use crate::category;
 use crate::listing::{self, Backend, FileKind, RawEntry};
 use crate::platform;
-use crate::model::{extension_of, flags, Kind, NewEntry, Skipped, Tree};
+use crate::model::{extension_of, flags, Kind, NewEntry, Skipped, Tree, Link};
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashSet;
 use std::ffi::OsStr;
@@ -108,7 +108,7 @@ fn is_package(name: &str) -> bool {
     PACKAGE_EXTS.contains(&extension_of(name).as_str())
 }
 
-fn entry_from_meta(name: String, meta: &Metadata) -> NewEntry {
+pub(crate) fn entry_from_meta(name: String, meta: &Metadata) -> NewEntry {
     let raw = RawEntry::from_meta(OsStr::new(""), meta);
     entry_from_raw(name, &raw)
 }
@@ -154,10 +154,10 @@ pub fn new_tree(root: &Path) -> io::Result<Tree> {
     Ok(Tree::new(root.to_path_buf(), e, platform::now_secs()))
 }
 
-struct Ctx<'a> {
-    tree: &'a RwLock<Tree>,
-    opts: &'a ScanOptions,
-    ctl: &'a ScanControl,
+pub(crate) struct Ctx<'a> {
+    pub(crate) tree: &'a RwLock<Tree>,
+    pub(crate) opts: &'a ScanOptions,
+    pub(crate) ctl: &'a ScanControl,
     seen_inodes: Mutex<HashSet<(u64, u64)>>,
     /// Devices the scan may descend on (`None` = a system without mount detection).
     allowed_devs: Option<Vec<u64>>,
@@ -167,8 +167,34 @@ struct Ctx<'a> {
     backends: Mutex<Vec<(u64, Backend)>>,
 }
 
-impl Ctx<'_> {
-    fn backend(&self, dev: Option<u64>, path: &Path) -> Backend {
+impl<'a> Ctx<'a> {
+    /// The context of a scan (or refresh) of the tree whose root is `root_path`.
+    pub(crate) fn new(tree: &'a RwLock<Tree>, opts: &'a ScanOptions, ctl: &'a ScanControl, root_path: &Path) -> Self {
+        let root_dev = fs::metadata(root_path).ok().and_then(|m| platform::device(&m));
+        let mut allowed_devs = root_dev.map(|d| vec![d]);
+        let mut skip_paths = Vec::new();
+        // macOS: "/" is the read-only system volume; user data lives on the Data volume and shows
+        // through firmlinks (/Users, /Applications…). We count it through the firmlinks and do not
+        // visit /System/Volumes/Data itself, so that nothing is counted twice.
+        if cfg!(target_os = "macos") && root_path == Path::new("/") {
+            let data = PathBuf::from("/System/Volumes/Data");
+            if let (Some(devs), Some(d)) = (allowed_devs.as_mut(), fs::metadata(&data).ok().and_then(|m| platform::device(&m))) {
+                devs.push(d);
+            }
+            skip_paths.push(data);
+        }
+        Ctx { tree, opts, ctl, seen_inodes: Mutex::new(HashSet::new()), allowed_devs, skip_paths, backends: Mutex::new(Vec::new()) }
+    }
+
+    pub(crate) fn pool(&self) -> rayon::ThreadPool {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(self.opts.threads.max(1))
+            .thread_name(|i| format!("disk-lens-scan-{i}"))
+            .build()
+            .expect("failed to create the thread pool")
+    }
+
+    pub(crate) fn backend(&self, dev: Option<u64>, path: &Path) -> Backend {
         if !self.opts.bulk {
             return Backend::Std;
         }
@@ -185,51 +211,34 @@ impl Ctx<'_> {
 /// Scans the folder `start` (already in the tree, without children) and its whole subtree.
 pub fn scan(tree: &RwLock<Tree>, start: u32, opts: &ScanOptions, ctl: &ScanControl) {
     let _activity = platform::ScanActivity::begin();
-    let start_path = tree.read().path(start);
-    let start_dev = fs::metadata(&start_path).ok().and_then(|m| platform::device(&m));
-    let mut allowed_devs = start_dev.map(|d| vec![d]);
-    let mut skip_paths = Vec::new();
-    // macOS: "/" is the read-only system volume; user data lives on the Data volume and shows
-    // through firmlinks (/Users, /Applications…). We count it through the firmlinks and do not
-    // visit /System/Volumes/Data itself, so that nothing is counted twice.
-    if cfg!(target_os = "macos") && start_path == Path::new("/") {
-        let data = PathBuf::from("/System/Volumes/Data");
-        if let (Some(devs), Some(d)) = (allowed_devs.as_mut(), fs::metadata(&data).ok().and_then(|m| platform::device(&m))) {
-            devs.push(d);
-        }
-        skip_paths.push(data);
-    }
-    let ctx = Ctx {
-        tree,
-        opts,
-        ctl,
-        seen_inodes: Mutex::new(HashSet::new()),
-        allowed_devs,
-        skip_paths,
-        backends: Mutex::new(Vec::new()),
+    let (root_path, start_path) = {
+        let t = tree.read();
+        (t.root_path.clone(), t.path(start))
     };
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(opts.threads.max(1))
-        .thread_name(|i| format!("disk-lens-scan-{i}"))
-        .build()
-        .expect("failed to create the thread pool");
+    let start_dev = fs::metadata(&start_path).ok().and_then(|m| platform::device(&m));
+    let ctx = Ctx::new(tree, opts, ctl, &root_path);
     let ctx_ref = &ctx;
-    pool.scope(move |s| scan_dir(s, ctx_ref, start, start_path, start_dev));
+    ctx.pool().scope(move |s| scan_dir(s, ctx_ref, start, start_path, start_dev));
 }
 
 /// One directory entry classified for insertion, plus whether the scan should descend into it.
-struct Classified {
-    entry: NewEntry,
+pub(crate) struct Classified {
+    pub(crate) entry: NewEntry,
     /// Path and device of a subfolder to scan next.
-    descend: Option<(PathBuf, Option<u64>)>,
+    pub(crate) descend: Option<(PathBuf, Option<u64>)>,
+    /// (device, inode) when the file has several hard links.
+    pub(crate) link: Option<(u64, u64)>,
 }
 
 impl Ctx<'_> {
     /// Turns a raw entry of `dir_path` into a tree entry: hard-link duplicates count as 0 bytes,
     /// folders on another volume (or on the skip list) are marked and not entered.
-    fn classify(&self, dir_path: &Path, raw: &RawEntry) -> Classified {
+    ///
+    /// With `dedup` off every hard link keeps its size; the caller sorts the duplicates out later
+    /// (see `refresh`), because this scan has not seen the links that are already in the tree.
+    pub(crate) fn classify(&self, dir_path: &Path, raw: &RawEntry, dedup: bool) -> Classified {
         let mut entry = entry_from_raw(raw.name.to_string_lossy().into_owned(), raw);
-        if raw.hardlink.is_some_and(|k| !self.seen_inodes.lock().insert(k)) {
+        if dedup && raw.hardlink.is_some_and(|k| !self.seen_inodes.lock().insert(k)) {
             entry.alloc = 0;
             entry.logical = 0;
             entry.flags |= flags::HARDLINK_DUP;
@@ -248,11 +257,11 @@ impl Ctx<'_> {
                 descend = Some((child_path, raw.dev));
             }
         }
-        Classified { entry, descend }
+        Classified { entry, descend, link: raw.hardlink }
     }
 
     /// Marks `dir` as unreadable and records why.
-    fn record_unreadable(&self, dir: u32, path: &Path, error: &io::Error) {
+    pub(crate) fn record_unreadable(&self, dir: u32, path: &Path, error: &io::Error) {
         self.ctl.progress.errors.fetch_add(1, Relaxed);
         let mut t = self.tree.write();
         t.nodes[dir as usize].flags |= flags::UNREADABLE;
@@ -260,20 +269,22 @@ impl Ctx<'_> {
     }
 
     /// Inserts the children of `dir` in one operation under the write lock. Returns their ids.
-    fn insert_children(&self, dir: u32, entries: Vec<NewEntry>, skipped: Vec<Skipped>) -> Vec<u32> {
+    /// `links` names the entries (by index) that are hard links, with their (device, inode).
+    fn insert_children(&self, dir: u32, entries: Vec<NewEntry>, skipped: Vec<Skipped>, links: &[(usize, (u64, u64))]) -> Vec<u32> {
         let timer = stats::Timer::start();
         let mut t = self.tree.write();
         timer.stop(&stats::LOCK_WAIT);
         let timer = stats::Timer::start();
         t.skipped.extend(skipped);
         let ids = t.add_children(dir, entries);
+        t.state.links.extend(links.iter().map(|&(i, (dev, ino))| Link { dev, ino, id: ids[i] }));
         drop(t);
         timer.stop(&stats::LOCK_HOLD);
         ids
     }
 }
 
-fn scan_dir<'s>(s: &rayon::Scope<'s>, ctx: &'s Ctx<'s>, dir: u32, path: PathBuf, dev: Option<u64>) {
+pub(crate) fn scan_dir<'s>(s: &rayon::Scope<'s>, ctx: &'s Ctx<'s>, dir: u32, path: PathBuf, dev: Option<u64>) {
     if ctx.ctl.cancelled() {
         return;
     }
@@ -286,6 +297,7 @@ fn scan_dir<'s>(s: &rayon::Scope<'s>, ctx: &'s Ctx<'s>, dir: u32, path: PathBuf,
     let mut entries = Vec::new();
     let mut subdirs: Vec<(usize, PathBuf, Option<u64>)> = Vec::new();
     let mut skipped = Vec::new();
+    let mut links = Vec::new();
     let mut bytes = 0u64;
     let mut files = 0u64;
     let mut n = 0usize;
@@ -304,7 +316,10 @@ fn scan_dir<'s>(s: &rayon::Scope<'s>, ctx: &'s Ctx<'s>, dir: u32, path: PathBuf,
                 return true;
             }
         };
-        let Classified { entry, descend } = ctx.classify(&path, &raw);
+        let Classified { entry, descend, link } = ctx.classify(&path, &raw, true);
+        if let Some(key) = link {
+            links.push((entries.len(), key));
+        }
         if let Some((child_path, child_dev)) = descend {
             subdirs.push((entries.len(), child_path, child_dev));
         }
@@ -329,7 +344,7 @@ fn scan_dir<'s>(s: &rayon::Scope<'s>, ctx: &'s Ctx<'s>, dir: u32, path: PathBuf,
         progress.errors.fetch_add(skipped.len() as u64, Relaxed);
     }
 
-    let ids = ctx.insert_children(dir, entries, skipped);
+    let ids = ctx.insert_children(dir, entries, skipped, &links);
     for (idx, child_path, child_dev) in subdirs {
         let id = ids[idx];
         s.spawn(move |s| scan_dir(s, ctx, id, child_path, child_dev));

@@ -131,6 +131,28 @@ struct Totals {
     dirs: u32,
 }
 
+/// One name of a file that has several hard links.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct Link {
+    pub dev: u64,
+    pub ino: u64,
+    pub id: u32,
+}
+
+/// What an incremental refresh needs to know about the scan that built the tree. Saved next to
+/// the tree (format version 3), not inside it, so that the tree's own layout stays as it was.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScanState {
+    /// Every node that is one of several hard links to a file. Entries of removed nodes may linger.
+    pub links: Vec<Link>,
+    /// Unix time of the last incremental refresh; 0 when the tree comes from a full scan only.
+    pub refreshed_at: i64,
+    /// File-system event id taken right before the tree was last brought up to date; 0 = none.
+    pub event_id: u64,
+    /// Identity of the event log `event_id` belongs to; ids of another log mean nothing.
+    pub event_uuid: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Tree {
     pub root_path: PathBuf,
@@ -142,6 +164,8 @@ pub struct Tree {
     /// Grows on every change: invalidates the per-view caches.
     #[serde(skip)]
     pub generation: u64,
+    #[serde(skip)]
+    pub state: ScanState,
 }
 
 impl Tree {
@@ -155,6 +179,7 @@ impl Tree {
             skipped: Vec::new(),
             scanned_at,
             generation: 0,
+            state: ScanState::default(),
         };
         t.push_node(NONE, root);
         t
@@ -363,6 +388,75 @@ impl Tree {
         self.nodes[id as usize].first_child = NONE;
         self.nodes[id as usize].flags &= !flags::UNREADABLE;
         self.apply(id, t, false);
+    }
+
+    pub fn find_child(&self, parent: u32, name: &str) -> Option<u32> {
+        self.children(parent).find(|&c| self.name(c) == name)
+    }
+
+    /// The deepest node on the way to `path` that is in the tree, and whether it is `path` itself.
+    /// `None` for a path outside the scan root.
+    pub fn resolve(&self, path: &std::path::Path) -> Option<(u32, bool)> {
+        let rel = path.strip_prefix(&self.root_path).ok()?;
+        let mut cur = ROOT;
+        for part in rel.components() {
+            let name = part.as_os_str().to_string_lossy();
+            match self.find_child(cur, &name) {
+                Some(c) => cur = c,
+                None => return Some((cur, false)),
+            }
+        }
+        Some((cur, true))
+    }
+
+    /// The node's own size: for a folder its total minus the totals of its children.
+    fn own_size(&self, id: u32) -> (u64, u64) {
+        let n = self.node(id);
+        self.children(id).fold((n.alloc, n.logical), |(a, l), c| {
+            let c = self.node(c);
+            (a.saturating_sub(c.alloc), l.saturating_sub(c.logical))
+        })
+    }
+
+    /// Brings the node's own sizes, times and the hidden/iCloud flags in line with `own`, keeping
+    /// its children, and passes the size difference up. A further hard link stays at size 0.
+    /// With `keep_created` the creation time only moves forward (for sources that do not report
+    /// when the item was added to its folder). Returns whether anything changed.
+    pub fn update_own(&mut self, id: u32, own: &NewEntry, keep_created: bool) -> bool {
+        const OWN_FLAGS: u8 = flags::HIDDEN | flags::DATALESS;
+        let is_dup = self.node(id).flags & flags::HARDLINK_DUP != 0;
+        let (new_alloc, new_logical) = if is_dup { (0, 0) } else { (own.alloc, own.logical) };
+        let (old_alloc, old_logical) = self.own_size(id);
+        let n = &mut self.nodes[id as usize];
+        let created = if keep_created { n.created.max(own.created) } else { own.created };
+        let new_flags = (n.flags & !OWN_FLAGS) | (own.flags & OWN_FLAGS);
+        let same = (old_alloc, old_logical, n.mtime, n.atime, n.created, n.flags) == (new_alloc, new_logical, own.mtime, own.atime, created, new_flags);
+        if same {
+            return false;
+        }
+        (n.mtime, n.atime, n.created, n.flags) = (own.mtime, own.atime, created, new_flags);
+        self.apply(id, Totals { alloc: old_alloc, logical: old_logical, files: 0, dirs: 0 }, false);
+        self.apply(id, Totals { alloc: new_alloc, logical: new_logical, files: 0, dirs: 0 }, true);
+        true
+    }
+
+    /// Makes a hard link the one that carries the file's size (`Some(sizes)`) or a further link
+    /// that counts as 0 (`None`), and passes the difference up.
+    pub fn set_link_primary(&mut self, id: u32, sizes: Option<(u64, u64)>) {
+        let n = &mut self.nodes[id as usize];
+        let old = Totals { alloc: n.alloc, logical: n.logical, files: 0, dirs: 0 };
+        let (alloc, logical) = sizes.unwrap_or((0, 0));
+        if sizes.is_some() {
+            n.flags &= !flags::HARDLINK_DUP;
+        } else {
+            n.flags |= flags::HARDLINK_DUP;
+        }
+        (n.alloc, n.logical) = (alloc, logical);
+        let parent = n.parent;
+        if parent != NONE {
+            self.apply(parent, old, false);
+            self.apply(parent, Totals { alloc, logical, files: 0, dirs: 0 }, true);
+        }
     }
 
     /// Overwrites the node's own metadata (after a fresh `lstat` during a rescan). Only the
