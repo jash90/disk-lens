@@ -7,6 +7,7 @@ pub mod persist;
 pub mod platform;
 pub mod query;
 pub mod scanner;
+pub mod stale;
 pub mod treemap;
 mod updater;
 pub mod volume;
