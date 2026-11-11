@@ -59,7 +59,7 @@ fn main() {
     let path = args
         .iter()
         .enumerate()
-        .find(|(i, a)| !a.starts_with("--") && !(*i > 0 && takes_value.contains(&args[i - 1].as_str())))
+        .find(|(i, a)| !(a.starts_with("--") || *i > 0 && takes_value.contains(&args[i - 1].as_str())))
         .map(|(_, a)| a.clone())
         .unwrap_or_else(|| ".".into());
     let mut opts = ScanOptions::default();
