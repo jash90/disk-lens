@@ -6,7 +6,7 @@
 //! the scan with its position in the event log), `--refresh FILE` (instead of scanning: loads
 //! FILE, reads only what changed since and prints the time of each step), `--compare FILE`
 //! (counts entries whose size differs from the scan in FILE; `--refresh-other` refreshes that
-//! scan first). With `--features scan-stats` the
+//! scan and this one first, so that both describe the same moment). With `--features scan-stats` the
 //! time is broken down.
 
 use disk_lens_lib::fsevents;
@@ -14,9 +14,10 @@ use disk_lens_lib::persist;
 use disk_lens_lib::refresh;
 use disk_lens_lib::scanner::ScanControl;
 use parking_lot::RwLock;
+use std::collections::{BTreeSet, HashSet};
 use std::path::Path;
 use std::time::Duration;
-use disk_lens_lib::model::{SizeMode, ROOT};
+use disk_lens_lib::model::{SizeMode, Tree, ROOT};
 use disk_lens_lib::query::{self, compute_filtered, Filter, SortKey, View};
 use disk_lens_lib::scanner::{scan_path, stats, ScanOptions};
 use disk_lens_lib::treemap;
@@ -35,11 +36,15 @@ fn text_flag(args: &[String], name: &str) -> Option<String> {
 }
 
 /// Loads a saved scan and brings it up to date from the event log, timing each step.
-fn refresh_from(file: &str, root: &Path, opts: &ScanOptions) -> disk_lens_lib::model::Tree {
+fn refresh_from(file: &str, root: &Path, opts: &ScanOptions) -> Tree {
     let step = Instant::now();
-    let now = fsevents::position(root).expect("no event log for this volume");
     let tree = persist::load(file.as_ref()).expect("cannot load the saved scan");
     println!("load      {:.2}s ({} nodes)", step.elapsed().as_secs_f64(), tree.len());
+    bring_up_to_date(tree, root, opts)
+}
+
+fn bring_up_to_date(tree: Tree, root: &Path, opts: &ScanOptions) -> Tree {
+    let now = fsevents::position(root).expect("no event log for this volume");
     let since = fsevents::Position { event_id: tree.state.event_id, uuid: tree.state.event_uuid.clone() };
     println!("event ids {} since the saved scan", now.event_id.saturating_sub(since.event_id));
     let step = Instant::now();
@@ -48,10 +53,41 @@ fn refresh_from(file: &str, root: &Path, opts: &ScanOptions) -> disk_lens_lib::m
     let shared = RwLock::new(tree);
     let step = Instant::now();
     let done = refresh::refresh(&shared, &changes, opts, &ScanControl::default());
-    println!("refresh   {:.2}s ({} listed, {} rescanned)", step.elapsed().as_secs_f64(), done.listed, done.rescanned);
+    println!("refresh   {:.2}s ({} listed, {} rescanned, {} recent files rechecked)", step.elapsed().as_secs_f64(), done.listed, done.rescanned, done.rechecked);
     let mut tree = shared.into_inner();
     (tree.state.event_id, tree.state.event_uuid) = (now.event_id, now.uuid);
     tree
+}
+
+/// Paths (relative to the root) of live nodes that are one of several hard links.
+fn link_paths(t: &Tree) -> HashSet<String> {
+    t.state.links.iter().filter(|l| t.is_attached(l.id)).map(|l| t.rel_path(ROOT, l.id)).collect()
+}
+
+/// Prints how `tree` differs from the scan in `file`. With `refresh_both` both are first
+/// brought up to date, so that they describe the disk at (nearly) the same moment.
+fn compare(tree: &Tree, file: &str, refresh_both: bool, root: &Path, opts: &ScanOptions) {
+    let (other, tree) = if refresh_both {
+        (refresh_from(file, root, opts), bring_up_to_date(tree.clone(), root, opts))
+    } else {
+        (persist::load(file.as_ref()).expect("cannot load the scan to compare with"), tree.clone())
+    };
+    for (label, t) in [("this", &tree), ("other", &other)] {
+        let r = t.node(ROOT);
+        println!("{label:<9} alloc_kib {} logical_b {} files {} dirs {} skipped {}", r.alloc / 1024, r.logical, r.files, r.dirs, t.skipped.len());
+    }
+    let diff = persist::diff(&other, &tree, SizeMode::Alloc, usize::MAX);
+    // Which hard link carries the size differs between any two scans; those are not errors.
+    let (links_a, links_b) = (link_paths(&tree), link_paths(&other));
+    let files: Vec<_> = diff.entries.iter().filter(|e| !e.is_dir).collect();
+    let real: Vec<_> = files.iter().filter(|e| !links_a.contains(&e.path) && !links_b.contains(&e.path)).collect();
+    let one_sided = diff.entries.iter().filter(|e| e.status == "added" || e.status == "removed").count();
+    println!("compare   {} entries differ: {} files, {} of them not hard links; {} entries in one scan only", diff.entries.len(), files.len(), real.len(), one_sided);
+    for e in real.iter().take(40) {
+        println!("  {:<8} {:>12} {}", e.status, e.delta, e.path);
+    }
+    let (here, there): (BTreeSet<_>, BTreeSet<_>) = (tree.skipped.iter().map(|s| &s.path).collect(), other.skipped.iter().map(|s| &s.path).collect());
+    println!("skipped   only here {:?}; only there {:?}", here.difference(&there).collect::<Vec<_>>(), there.difference(&here).collect::<Vec<_>>());
 }
 
 fn main() {
@@ -104,19 +140,7 @@ fn main() {
     println!("entries/s {:.0}", tree.len() as f64 / median);
 
     if let Some(file) = text_flag(&args, "--compare") {
-        // With `--refresh-other` the other scan is brought up to date first, so that both
-        // describe the disk at (nearly) the same moment.
-        let other = if args.iter().any(|a| a == "--refresh-other") {
-            refresh_from(&file, path.as_ref(), &opts)
-        } else {
-            persist::load(file.as_ref()).expect("cannot load the scan to compare with")
-        };
-        let diff = persist::diff(&other, &tree, SizeMode::Alloc, usize::MAX);
-        let o = other.node(ROOT);
-        println!("compare   {} entries differ; other: alloc_kib {} files {} dirs {} skipped {}", diff.entries.len(), o.alloc / 1024, o.files, o.dirs, other.skipped.len());
-        for e in diff.entries.iter().filter(|e| !e.is_dir).take(40) {
-            println!("  {:<8} {:>12} {}", e.status, e.delta, e.path);
-        }
+        compare(&tree, &file, args.iter().any(|a| a == "--refresh-other"), path.as_ref(), &opts);
     }
     if let Some(file) = text_flag(&args, "--save") {
         let step = Instant::now();
