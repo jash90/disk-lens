@@ -1,5 +1,5 @@
 /** System, na którym działa aplikacja – rozpoznany z user agenta webview (WKWebView / WebView2 / WebKitGTK). */
-export type Os = "macos" | "windows" | "linux";
+type Os = "macos" | "windows" | "linux";
 
 const ua = navigator.userAgent;
 export const OS: Os = ua.includes("Mac") ? "macos" : ua.includes("Windows") ? "windows" : "linux";

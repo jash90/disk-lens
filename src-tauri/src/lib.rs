@@ -25,7 +25,6 @@ pub fn run() {
         .manage(commands::AppState::default())
         .manage(updater::Updates::default())
         .invoke_handler(tauri::generate_handler![
-            commands::platform,
             commands::launch_path,
             commands::list_volumes,
             commands::scan_start,

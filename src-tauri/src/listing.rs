@@ -138,7 +138,6 @@ mod bulk {
 
     /// Brak w `libc`: kod błędu odczytu atrybutów konkretnego wpisu.
     const ATTR_CMN_ERROR: u32 = 0x2000_0000;
-    const SF_DATALESS: u32 = 0x4000_0000;
     // Typy obiektów (`enum vtype` z <sys/vnode.h>).
     const VREG: u32 = 1;
     const VDIR: u32 = 2;
@@ -283,7 +282,7 @@ mod bulk {
             mtime: mtime.tv_sec.max(0),
             dev: Some(dev),
             hardlink: (kind != FileKind::Dir && nlink > 1).then_some((dev, fileid)),
-            dataless: fl & SF_DATALESS != 0,
+            dataless: fl & crate::platform::SF_DATALESS != 0,
         }))
     }
 

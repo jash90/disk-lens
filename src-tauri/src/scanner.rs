@@ -7,7 +7,7 @@
 use crate::category;
 use crate::listing::{self, Backend, FileKind, RawEntry};
 use crate::platform;
-use crate::model::{flags, Kind, NewEntry, Skipped, Tree};
+use crate::model::{extension_of, flags, Kind, NewEntry, Skipped, Tree};
 use parking_lot::{Mutex, RwLock};
 use std::collections::HashSet;
 use std::ffi::OsStr;
@@ -104,17 +104,11 @@ impl ScanControl {
     }
 }
 
-pub fn is_package(name: &str) -> bool {
-    match name.rfind('.') {
-        Some(i) if i > 0 => {
-            let ext = name[i + 1..].to_ascii_lowercase();
-            PACKAGE_EXTS.contains(&ext.as_str())
-        }
-        _ => false,
-    }
+fn is_package(name: &str) -> bool {
+    PACKAGE_EXTS.contains(&extension_of(name).as_str())
 }
 
-pub fn entry_from_meta(name: String, meta: &Metadata) -> NewEntry {
+fn entry_from_meta(name: String, meta: &Metadata) -> NewEntry {
     let raw = RawEntry::from_meta(OsStr::new(""), meta);
     entry_from_raw(name, &raw)
 }
@@ -155,11 +149,7 @@ pub fn new_tree(root: &Path) -> io::Result<Tree> {
     let mut e = entry_from_meta(String::new(), &meta);
     e.kind = Kind::Dir;
     e.cat = category::FOLDER;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    Ok(Tree::new(root.to_path_buf(), e, now))
+    Ok(Tree::new(root.to_path_buf(), e, platform::now_secs()))
 }
 
 struct Ctx<'a> {

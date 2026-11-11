@@ -1,10 +1,10 @@
-//! Treemapa „squarified” (Bruls, Huizing, van Wijk 2000) liczona po stronie Rusta.
+//! Squarified treemap (Bruls, Huizing, van Wijk 2000) computed on the Rust side.
 //!
-//! Wynik to płaska lista prostokątów zakodowana binarnie (24 B/prostokąt), żeby
-//! przez IPC nie przechodziło całe drzewo ani ciężki JSON.
+//! The result is a flat list of rectangles in a binary encoding (24 B per rectangle), so that
+//! neither the whole tree nor heavy JSON crosses the IPC boundary.
 
-use crate::model::{Kind, Tree, NONE};
-use crate::query::View;
+use crate::model::{Tree, NONE};
+use crate::query::{is_leaf, View};
 use std::collections::VecDeque;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -23,7 +23,7 @@ impl Rect {
 
 pub const KIND_FILE: u8 = 0;
 pub const KIND_DIR: u8 = 1;
-/// Zagregowane drobne elementy („inne”); `id` wskazuje folder-rodzica.
+/// Small items folded together ("other"); `id` points at the parent folder.
 pub const KIND_REST: u8 = 2;
 
 #[derive(Clone, Copy, Debug)]
@@ -39,15 +39,15 @@ pub struct Tile {
 pub struct Options {
     pub width: f64,
     pub height: f64,
-    /// Elementy o polu mniejszym niż to (px²) idą do „inne”.
+    /// Items with a smaller area than this (px²) go to "other".
     pub min_area: f64,
     pub max_tiles: usize,
-    /// Odstęp wewnątrz folderu, żeby była widoczna struktura.
+    /// Padding inside a folder, so that the structure shows.
     pub padding: f64,
     pub now: i64,
 }
 
-/// Rozkłada `sizes` (posortowane malejąco, > 0) w prostokącie. Zwraca prostokąty w tej samej kolejności.
+/// Lays out `sizes` (sorted descending, > 0) in the rectangle. Returns rectangles in the same order.
 pub fn squarify(sizes: &[f64], rect: Rect) -> Vec<Rect> {
     let mut out = Vec::with_capacity(sizes.len());
     let total: f64 = sizes.iter().sum();
@@ -65,7 +65,7 @@ pub fn squarify(sizes: &[f64], rect: Rect) -> Vec<Rect> {
         let mut worst = worst_ratio(areas[i], areas[i], sum, short);
         while j < areas.len() {
             let nsum = sum + areas[j];
-            // Lista jest malejąca, więc max = pierwszy, min = nowy.
+            // The list is descending, so max = the first one, min = the new one.
             let nworst = worst_ratio(areas[i], areas[j], nsum, short);
             if nworst > worst {
                 break;
@@ -76,7 +76,7 @@ pub fn squarify(sizes: &[f64], rect: Rect) -> Vec<Rect> {
         }
         let last_row = j == areas.len();
         if r.w >= r.h {
-            // Kolumna przy lewej krawędzi.
+            // A column along the left edge.
             let cw = if last_row { r.w } else { sum / r.h };
             let mut y = r.y;
             for (k, a) in areas[i..j].iter().enumerate() {
@@ -87,7 +87,7 @@ pub fn squarify(sizes: &[f64], rect: Rect) -> Vec<Rect> {
             r.x += cw;
             r.w -= cw;
         } else {
-            // Wiersz przy górnej krawędzi.
+            // A row along the top edge.
             let rh = if last_row { r.h } else { sum / r.w };
             let mut x = r.x;
             for (k, a) in areas[i..j].iter().enumerate() {
@@ -121,17 +121,12 @@ pub fn age_bucket(mtime: i64, now: i64) -> u8 {
     }
 }
 
+/// A node whose children get their own tiles.
 fn is_container(tree: &Tree, id: u32, root: u32) -> bool {
-    let n = tree.node(id);
-    match n.kind {
-        Kind::Dir => n.first_child != NONE,
-        // Pakiet to jeden kafel, chyba że użytkownik wszedł do środka (jest korzeniem widoku).
-        Kind::Package => id == root && n.first_child != NONE,
-        _ => false,
-    }
+    !is_leaf(tree, id, root) && tree.node(id).first_child != NONE
 }
 
-/// Układa treemapę poddrzewa `root`. Kolejność BFS: budżet kafli rozkłada się równo po poziomach.
+/// Lays out the treemap of the `root` subtree. BFS order spreads the tile budget evenly over levels.
 pub fn layout(view: &View, root: u32, opts: &Options) -> Vec<Tile> {
     let tree = view.tree;
     let mut tiles = Vec::new();
@@ -149,7 +144,7 @@ pub fn layout(view: &View, root: u32, opts: &Options) -> Vec<Tile> {
             .filter(|&(_, s)| s > 0)
             .collect();
         kids.sort_unstable_by_key(|k| std::cmp::Reverse(k.1));
-        // Własne bloki folderu (bez dzieci) nie dostają kafla – liczymy pole wg sumy dzieci.
+        // The folder's own blocks (without children) get no tile: the area follows the sum of the children.
         let kids_total: f64 = kids.iter().map(|k| k.1 as f64).sum();
         if kids_total <= 0.0 {
             continue;
@@ -171,7 +166,7 @@ pub fn layout(view: &View, root: u32, opts: &Options) -> Vec<Tile> {
         if sizes.is_empty() {
             continue;
         }
-        // „Inne” jest na końcu, ale squarify wymaga kolejności malejącej – sortujemy indeksy.
+        // "Other" sits at the end, but squarify needs descending order, so we sort indices.
         let mut order: Vec<usize> = (0..sizes.len()).collect();
         order.sort_by(|&a, &b| sizes[b].total_cmp(&sizes[a]));
         let sorted: Vec<f64> = order.iter().map(|&i| sizes[i]).collect();
@@ -204,7 +199,7 @@ pub fn layout(view: &View, root: u32, opts: &Options) -> Vec<Tile> {
     tiles
 }
 
-/// Kodowanie: [id u32][x f32][y f32][w f32][h f32][depth u8][kind u8][cat u8][age u8], little-endian.
+/// Encoding: [id u32][x f32][y f32][w f32][h f32][depth u8][kind u8][cat u8][age u8], little-endian.
 pub fn encode(tiles: &[Tile]) -> Vec<u8> {
     let mut out = Vec::with_capacity(tiles.len() * 24);
     for t in tiles {

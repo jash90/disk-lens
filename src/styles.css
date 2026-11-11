@@ -155,7 +155,6 @@ kbd {
   color: var(--danger);
 }
 
-.btn.danger.primary,
 .modal .btn.danger {
   background: var(--danger);
   border-color: var(--danger);

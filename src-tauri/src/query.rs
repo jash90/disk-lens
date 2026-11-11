@@ -1,4 +1,4 @@
-//! Zapytania widoku: dzieci folderu, największe pliki, podział wg typu, filtry.
+//! View queries: folder children, largest files, breakdown by type, filters.
 
 use crate::category;
 use crate::model::{extension_of, Kind, SizeMode, Tree, NONE};
@@ -11,13 +11,13 @@ use std::sync::Arc;
 #[derive(Clone, Debug, Default, Deserialize, Serialize, Hash, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Filter {
-    /// Fragment nazwy pliku (bez rozróżniania wielkości liter).
+    /// Part of the file name (case-insensitive).
     pub query: String,
-    /// Minimalny rozmiar pliku w bajtach.
+    /// Minimum file size in bytes.
     pub min_size: u64,
-    /// Tylko te rozszerzenia (puste = wszystkie).
+    /// Only these extensions (empty = all).
     pub extensions: Vec<String>,
-    /// Nazwy folderów/plików pomijanych w całości (np. `node_modules`, `.git`).
+    /// Names of folders/files left out entirely (e.g. `node_modules`, `.git`).
     pub excludes: Vec<String>,
 }
 
@@ -34,7 +34,7 @@ impl Filter {
     }
 }
 
-/// Sumy policzone z uwzględnieniem filtra – jeden przebieg O(n) od końca areny.
+/// Totals computed with the filter applied: one O(n) pass from the end of the arena.
 pub struct FilteredSums {
     pub size: Vec<u64>,
     pub files: Vec<u32>,
@@ -76,7 +76,7 @@ pub fn compute_filtered(tree: &Tree, filter: &Filter, mode: SizeMode) -> Filtere
     FilteredSums { size, files }
 }
 
-/// Widok drzewa w danym trybie rozmiaru, opcjonalnie przefiltrowany.
+/// The tree seen in one size mode, optionally filtered.
 pub struct View<'a> {
     pub tree: &'a Tree,
     pub mode: SizeMode,
@@ -112,6 +112,36 @@ impl<'a> View<'a> {
     pub fn visible_children(&self, id: u32) -> Vec<u32> {
         self.tree.children(id).filter(|&c| self.visible(c)).collect()
     }
+
+    /// Calls `f` for every visible leaf under `root` (see [`is_leaf`]), depth-first without recursion.
+    pub fn for_each_leaf(&self, root: u32, mut f: impl FnMut(u32)) {
+        let mut stack = vec![root];
+        while let Some(id) = stack.pop() {
+            if is_leaf(self.tree, id, root) {
+                if self.visible(id) {
+                    f(id);
+                }
+            } else {
+                stack.extend(self.tree.children(id).filter(|&c| self.visible(c)));
+            }
+        }
+    }
+}
+
+/// Files are leaves, and so are packages (`.app` etc.), which count as one item unless the user
+/// has navigated into one (it is the view root).
+pub fn is_leaf(tree: &Tree, id: u32, root: u32) -> bool {
+    let kind = tree.node(id).kind;
+    !kind.is_dir() || (kind == Kind::Package && id != root)
+}
+
+/// Share of `whole` taken by `part`, 0–100.
+fn percent(part: u64, whole: u64) -> f64 {
+    if whole > 0 {
+        part as f64 * 100.0 / whole as f64
+    } else {
+        0.0
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
@@ -139,7 +169,7 @@ pub struct Row {
     pub files: u32,
     pub dirs: u32,
     pub mtime: i64,
-    /// Udział w rozmiarze rodzica (0–100).
+    /// Share of the parent's size (0–100).
     pub pct: f64,
     pub has_children: bool,
 }
@@ -152,7 +182,7 @@ pub struct Page {
     pub rows: Vec<Row>,
 }
 
-pub fn row(view: &View, id: u32, parent_size: u64) -> Row {
+fn row(view: &View, id: u32, parent_size: u64) -> Row {
     let t = view.tree;
     let n = t.node(id);
     let size = view.size(id);
@@ -168,12 +198,12 @@ pub fn row(view: &View, id: u32, parent_size: u64) -> Row {
         files: view.files(id),
         dirs: n.dirs,
         mtime: n.mtime,
-        pct: if parent_size > 0 { size as f64 * 100.0 / parent_size as f64 } else { 0.0 },
+        pct: percent(size, parent_size),
         has_children: n.kind.is_dir() && n.first_child != NONE && view.files(id) + n.dirs > 0,
     }
 }
 
-pub fn sorted_children(view: &View, id: u32, sort: SortKey, desc: bool) -> Vec<u32> {
+fn sorted_children(view: &View, id: u32, sort: SortKey, desc: bool) -> Vec<u32> {
     let t = view.tree;
     let mut ids = view.visible_children(id);
     match sort {
@@ -196,15 +226,6 @@ pub fn children(view: &View, id: u32, sort: SortKey, desc: bool, offset: usize, 
     Page { total: ids.len(), parent_size, rows }
 }
 
-/// Przejście poddrzewa w głąb (bez rekurencji).
-pub fn for_each_descendant(tree: &Tree, root: u32, mut f: impl FnMut(u32)) {
-    let mut stack = vec![root];
-    while let Some(id) = stack.pop() {
-        f(id);
-        stack.extend(tree.children(id));
-    }
-}
-
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct FileRow {
@@ -217,25 +238,16 @@ pub struct FileRow {
     pub kind: &'static str,
 }
 
-/// Największe pliki w poddrzewie. Pakiety (`.app` itd.) traktujemy jak pojedyncze pliki.
+/// Largest files in the subtree. Packages (`.app` etc.) count as single files.
 pub fn top_files(view: &View, root: u32, limit: usize) -> Vec<FileRow> {
     let t = view.tree;
     let mut heap: BinaryHeap<Reverse<(u64, u32)>> = BinaryHeap::with_capacity(limit + 1);
-    let mut stack = vec![root];
-    while let Some(id) = stack.pop() {
-        let n = t.node(id);
-        let leaf = !n.kind.is_dir() || (n.kind == Kind::Package && id != root);
-        if leaf {
-            if view.visible(id) {
-                heap.push(Reverse((view.size(id), id)));
-                if heap.len() > limit {
-                    heap.pop();
-                }
-            }
-            continue;
+    view.for_each_leaf(root, |id| {
+        heap.push(Reverse((view.size(id), id)));
+        if heap.len() > limit {
+            heap.pop();
         }
-        stack.extend(t.children(id).filter(|&c| view.visible(c)));
-    }
+    });
     let mut out: Vec<_> = heap.into_iter().map(|Reverse(x)| x).collect();
     out.sort_by_key(|x| Reverse(x.0));
     out.into_iter()
@@ -275,7 +287,6 @@ pub struct ExtStat {
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Breakdown {
-    pub total: u64,
     pub categories: Vec<CatStat>,
     pub extensions: Vec<ExtStat>,
 }
@@ -284,27 +295,17 @@ pub fn type_breakdown(view: &View, root: u32, max_ext: usize) -> Breakdown {
     let t = view.tree;
     let mut cats = [(0u64, 0u64); category::NAMES.len()];
     let mut exts: HashMap<String, (u64, u64)> = HashMap::new();
-    let mut stack = vec![root];
-    while let Some(id) = stack.pop() {
-        let n = t.node(id);
-        if n.kind.is_dir() && !(n.kind == Kind::Package && id != root) {
-            stack.extend(t.children(id).filter(|&c| view.visible(c)));
-            continue;
-        }
-        if !view.visible(id) {
-            continue;
-        }
+    view.for_each_leaf(root, |id| {
         let s = view.size(id);
-        let c = &mut cats[n.cat as usize];
+        let c = &mut cats[t.node(id).cat as usize];
         c.0 += s;
         c.1 += 1;
-        let name = t.name(id);
-        let ext = extension_of(name);
+        let ext = extension_of(t.name(id));
         let key = if ext.is_empty() { "(bez rozszerzenia)".to_string() } else { ext };
         let e = exts.entry(key).or_default();
         e.0 += s;
         e.1 += 1;
-    }
+    });
     let mut categories: Vec<CatStat> = cats
         .iter()
         .enumerate()
@@ -318,7 +319,7 @@ pub fn type_breakdown(view: &View, root: u32, max_ext: usize) -> Breakdown {
         .collect();
     extensions.sort_by_key(|e| Reverse(e.size));
     extensions.truncate(max_ext);
-    Breakdown { total: view.size(root), categories, extensions }
+    Breakdown { categories, extensions }
 }
 
 #[derive(Serialize, Debug)]
@@ -328,15 +329,12 @@ pub struct NodeInfo {
     pub name: String,
     pub path: String,
     pub kind: &'static str,
-    pub flags: u8,
-    pub cat: u8,
     pub size: u64,
     pub alloc: u64,
     pub logical: u64,
     pub files: u32,
     pub dirs: u32,
     pub mtime: i64,
-    pub parent: Option<u32>,
     pub pct_of_root: f64,
 }
 
@@ -350,16 +348,13 @@ pub fn node_info(view: &View, id: u32) -> NodeInfo {
         name: t.name(id).to_string(),
         path: t.path(id).to_string_lossy().into_owned(),
         kind: n.kind.as_str(),
-        flags: n.flags,
-        cat: n.cat,
         size,
         alloc: n.alloc,
         logical: n.logical,
         files: view.files(id),
         dirs: n.dirs,
         mtime: n.mtime,
-        parent: (n.parent != NONE).then_some(n.parent),
-        pct_of_root: if root_size > 0 { size as f64 * 100.0 / root_size as f64 } else { 0.0 },
+        pct_of_root: percent(size, root_size),
     }
 }
 

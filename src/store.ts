@@ -4,9 +4,9 @@ import { EMPTY_FILTER, type Filter, type Progress, type SizeMode, type SortKey, 
 import type { ColorMode } from "./lib/colors";
 
 export type Tab = "treemap" | "top" | "types" | "skipped" | "diff" | "disk";
-export type SelectSource = "tree" | "map" | "other";
+type SelectSource = "tree" | "map" | "other";
 
-export interface Toast {
+interface Toast {
   id: number;
   text: string;
   kind: "info" | "error" | "success";

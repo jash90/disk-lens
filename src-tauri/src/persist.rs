@@ -1,4 +1,4 @@
-//! Zapis/odczyt skanu, eksport widoku do CSV/JSON i porównanie dwóch skanów.
+//! Saving/loading a scan, exporting a view to CSV/JSON and comparing two scans.
 
 use crate::model::{SizeMode, Tree, ROOT};
 use crate::query::{Row, View};
@@ -51,7 +51,7 @@ struct ExportRow<'a> {
 }
 
 fn iso_date(ts: i64) -> String {
-    // Data UTC bez zewnętrznych zależności (algorytm „civil from days” H. Hinnanta).
+    // UTC date without external dependencies (H. Hinnant's "civil from days" algorithm).
     let days = ts.div_euclid(86_400);
     let secs = ts.rem_euclid(86_400);
     let z = days + 719_468;
@@ -127,19 +127,24 @@ pub struct DiffEntry {
     pub depth: u32,
 }
 
+impl DiffEntry {
+    fn new(path: String, before: u64, after: u64, status: &'static str, is_dir: bool, depth: u32) -> Self {
+        DiffEntry { path, before, after, delta: after as i64 - before as i64, status, is_dir, depth }
+    }
+}
+
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct DiffResult {
     pub before_root: String,
     pub after_root: String,
     pub before_scanned_at: i64,
-    pub after_scanned_at: i64,
     pub total_before: u64,
     pub total_after: u64,
     pub entries: Vec<DiffEntry>,
 }
 
-/// Porównuje dwa skany, dopasowując węzły po nazwach na każdym poziomie (ścieżki względne).
+/// Compares two scans, matching nodes by name at every level (relative paths).
 pub fn diff(before: &Tree, after: &Tree, mode: SizeMode, limit: usize) -> DiffResult {
     let mut entries = Vec::new();
     diff_dir(before, after, ROOT, ROOT, String::new(), 0, mode, &mut entries);
@@ -149,7 +154,6 @@ pub fn diff(before: &Tree, after: &Tree, mode: SizeMode, limit: usize) -> DiffRe
         before_root: before.root_path.to_string_lossy().into_owned(),
         after_root: after.root_path.to_string_lossy().into_owned(),
         before_scanned_at: before.scanned_at,
-        after_scanned_at: after.scanned_at,
         total_before: before.node(ROOT).size(mode),
         total_after: after.node(ROOT).size(mode),
         entries,
@@ -178,29 +182,14 @@ fn diff_dir(
                 let bn = b.node(bc);
                 let before_size = bn.size(mode);
                 if before_size != after_size {
-                    out.push(DiffEntry {
-                        path: join(name),
-                        before: before_size,
-                        after: after_size,
-                        delta: after_size as i64 - before_size as i64,
-                        status: if after_size > before_size { "grown" } else { "shrunk" },
-                        is_dir: an.kind.is_dir(),
-                        depth,
-                    });
+                    let status = if after_size > before_size { "grown" } else { "shrunk" };
+                    out.push(DiffEntry::new(join(name), before_size, after_size, status, an.kind.is_dir(), depth));
                     if an.kind.is_dir() && bn.kind.is_dir() {
                         diff_dir(b, a, bc, ac, join(name), depth + 1, mode, out);
                     }
                 }
             }
-            None if after_size > 0 => out.push(DiffEntry {
-                path: join(name),
-                before: 0,
-                after: after_size,
-                delta: after_size as i64,
-                status: "added",
-                is_dir: an.kind.is_dir(),
-                depth,
-            }),
+            None if after_size > 0 => out.push(DiffEntry::new(join(name), 0, after_size, "added", an.kind.is_dir(), depth)),
             None => {}
         }
     }
@@ -208,15 +197,7 @@ fn diff_dir(
         let bn = b.node(bc);
         let s = bn.size(mode);
         if s > 0 {
-            out.push(DiffEntry {
-                path: join(name),
-                before: s,
-                after: 0,
-                delta: -(s as i64),
-                status: "removed",
-                is_dir: bn.kind.is_dir(),
-                depth,
-            });
+            out.push(DiffEntry::new(join(name), s, 0, "removed", bn.kind.is_dir(), depth));
         }
     }
 }

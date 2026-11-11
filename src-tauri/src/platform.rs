@@ -1,36 +1,36 @@
-//! Metadane plików zależne od systemu: zajęte miejsce, urządzenie, i-węzeł, czas modyfikacji.
+//! System-dependent file metadata: allocated space, device, inode, modification time.
 
 use std::fs::Metadata;
 
-/// Miejsce zajęte na dysku.
+/// Space allocated on disk.
 #[cfg(unix)]
 pub fn alloc_size(meta: &Metadata) -> u64 {
     use std::os::unix::fs::MetadataExt;
     meta.blocks() * 512
 }
 
-/// Windows nie podaje bloków w `Metadata` – zaokrąglamy do typowego klastra NTFS (4 KiB).
-/// Plików skompresowanych i rzadkich to nie uwzględnia.
+/// Windows does not report blocks in `Metadata`, so we round up to the usual NTFS cluster (4 KiB).
+/// This ignores compressed and sparse files.
 #[cfg(not(unix))]
 pub fn alloc_size(meta: &Metadata) -> u64 {
     const CLUSTER: u64 = 4096;
     meta.len().div_ceil(CLUSTER) * CLUSTER
 }
 
-/// Identyfikator urządzenia (wolumenu) – do wykrywania punktów montowania.
+/// Device (volume) identifier, used to detect mount points.
 #[cfg(unix)]
 pub fn device(meta: &Metadata) -> Option<u64> {
     use std::os::unix::fs::MetadataExt;
     Some(meta.dev())
 }
 
-/// Na Windows punkty montowania to reparse pointy, a te i tak nie są śledzone (jak symlinki).
+/// On Windows mount points are reparse points, which are not followed anyway (like symlinks).
 #[cfg(not(unix))]
 pub fn device(_meta: &Metadata) -> Option<u64> {
     None
 }
 
-/// Klucz (urządzenie, i-węzeł) dla plików z więcej niż jednym twardym dowiązaniem.
+/// (device, inode) key for files with more than one hard link.
 #[cfg(unix)]
 pub fn hardlink_key(meta: &Metadata) -> Option<(u64, u64)> {
     use std::os::unix::fs::MetadataExt;
@@ -42,20 +42,29 @@ pub fn hardlink_key(_meta: &Metadata) -> Option<(u64, u64)> {
     None
 }
 
-/// Czas modyfikacji jako Unix timestamp (s).
-pub fn mtime(meta: &Metadata) -> i64 {
-    meta.modified()
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+/// Seconds since the Unix epoch; 0 for times before it.
+fn unix_secs(t: std::time::SystemTime) -> i64 {
+    t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
-/// Placeholder iCloud (SF_DATALESS) – tylko macOS.
+/// Current time as a Unix timestamp (s).
+pub fn now_secs() -> i64 {
+    unix_secs(std::time::SystemTime::now())
+}
+
+/// Modification time as a Unix timestamp (s); 0 when unknown.
+pub fn mtime(meta: &Metadata) -> i64 {
+    meta.modified().map(unix_secs).unwrap_or(0)
+}
+
+/// `st_flags` bit of an iCloud placeholder: the content is not on disk.
+#[cfg(target_os = "macos")]
+pub const SF_DATALESS: u32 = 0x4000_0000;
+
+/// iCloud placeholder (SF_DATALESS); macOS only.
 #[cfg(target_os = "macos")]
 pub fn is_dataless(meta: &Metadata) -> bool {
     use std::os::macos::fs::MetadataExt;
-    const SF_DATALESS: u32 = 0x4000_0000;
     meta.st_flags() & SF_DATALESS != 0
 }
 
@@ -64,9 +73,9 @@ pub fn is_dataless(_meta: &Metadata) -> bool {
     false
 }
 
-/// Na czas skanu zgłasza systemowi pracę zainicjowaną przez użytkownika, żeby macOS nie usypiał
-/// aplikacji (App Nap), gdy okno jest schowane. Zwykły sen systemu nadal jest dozwolony.
-/// Zwolnienie przy `Drop`.
+/// For the duration of a scan, reports user-initiated work to the system so that macOS does not
+/// put the app to sleep (App Nap) while its window is hidden. Ordinary system sleep is still
+/// allowed. Released on `Drop`.
 pub struct ScanActivity {
     #[cfg(target_os = "macos")]
     token: objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2::runtime::NSObjectProtocol>>,
@@ -91,7 +100,7 @@ impl ScanActivity {
 impl Drop for ScanActivity {
     fn drop(&mut self) {
         #[cfg(target_os = "macos")]
-        // SAFETY: `token` to obiekt zwrócony przez beginActivityWithOptions:reason:.
+        // SAFETY: `token` is the object returned by beginActivityWithOptions:reason:.
         unsafe {
             objc2_foundation::NSProcessInfo::processInfo().endActivity(&self.token)
         };

@@ -37,7 +37,7 @@ export function formatDuration(ms: number): string {
 }
 
 /** Odmiana: 1 plik, 2 pliki, 5 plików. */
-export function plural(n: number, one: string, few: string, many: string): string {
+function plural(n: number, one: string, few: string, many: string): string {
   const n10 = n % 10;
   const n100 = n % 100;
   if (n === 1) return one;

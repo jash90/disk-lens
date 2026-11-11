@@ -23,7 +23,7 @@ export function filterActive(f: Filter): boolean {
   return f.query.trim() !== "" || f.minSize > 0 || f.extensions.length > 0 || f.excludes.length > 0;
 }
 
-/** Bity flag węzła – zgodne z `model::flags` w Rust. */
+/** Node flag bits, matching `model::flags` in Rust. */
 export const Flags = {
   HIDDEN: 1 << 0,
   DATALESS: 1 << 1,
@@ -39,14 +39,14 @@ export interface Volume {
   free: number;
 }
 
-/** Wolumen, na którym leży skan. */
+/** The volume the scan lives on. */
 export interface VolumeInfo {
   name: string;
   mountPath: string;
   fsType: string;
   total: number;
   free: number;
-  /** macOS: wolne razem z miejscem, które system odzyska sam (tak liczy Finder). */
+  /** macOS: free space including what the system reclaims on its own (as Finder counts it). */
   availableImportant: number | null;
 }
 
@@ -58,7 +58,7 @@ export interface Coverage {
   purgeable: number;
 }
 
-/** Wydanie znalezione przez updater (`latest.json` z GitHub Releases). */
+/** Release found by the updater (`latest.json` from GitHub Releases). */
 export interface UpdateInfo {
   version: string;
   currentVersion: string;
@@ -66,9 +66,9 @@ export interface UpdateInfo {
   date: string | null;
 }
 
-export interface UpdateProgress {
+interface UpdateProgress {
   done: number;
-  /** 0, gdy serwer nie podał długości. */
+  /** 0 when the server did not report the length. */
   total: number;
   finished: boolean;
   error: string | null;
@@ -79,7 +79,6 @@ export interface Progress {
   files: number;
   dirs: number;
   bytes: number;
-  errors: number;
   current: string;
   elapsedMs: number;
   done: boolean;
@@ -96,7 +95,6 @@ export interface TreeInfo {
   dirs: number;
   skipped: number;
   scannedAt: number;
-  nodes: number;
   volume: VolumeInfo | null;
   coverage: Coverage | null;
 }
@@ -128,15 +126,12 @@ export interface NodeInfo {
   name: string;
   path: string;
   kind: NodeKind;
-  flags: number;
-  cat: number;
   size: number;
   alloc: number;
   logical: number;
   files: number;
   dirs: number;
   mtime: number;
-  parent: number | null;
   pctOfRoot: number;
 }
 
@@ -156,7 +151,6 @@ export interface FileRow {
 }
 
 export interface Breakdown {
-  total: number;
   categories: { cat: number; name: string; size: number; files: number }[];
   extensions: { ext: string; cat: number; size: number; files: number }[];
 }
@@ -169,12 +163,11 @@ export interface Skipped {
 export interface TrashCheck {
   path: string;
   alloc: number;
-  logical: number;
   files: number;
   blocked: string | null;
 }
 
-export interface DiffEntry {
+interface DiffEntry {
   path: string;
   before: number;
   after: number;
@@ -188,13 +181,12 @@ export interface DiffResult {
   beforeRoot: string;
   afterRoot: string;
   beforeScannedAt: number;
-  afterScannedAt: number;
   totalBefore: number;
   totalAfter: number;
   entries: DiffEntry[];
 }
 
-/** Kafel treemapy zdekodowany z binarnej odpowiedzi (24 B/kafel). */
+/** Treemap tile decoded from the binary response (24 B per tile). */
 export interface Tile {
   id: number;
   x: number;
@@ -202,12 +194,11 @@ export interface Tile {
   w: number;
   h: number;
   depth: number;
-  kind: number; // 0 plik, 1 folder, 2 „inne”
+  kind: number; // 0 file, 1 folder, 2 "other"
   cat: number;
   age: number;
 }
 
-export const TILE_FILE = 0;
 export const TILE_DIR = 1;
 export const TILE_REST = 2;
 
@@ -265,7 +256,7 @@ export const api = {
     listen<Progress>("scan://progress", (e) => cb(e.payload)),
   checkUpdate: () => invoke<UpdateInfo | null>("check_update"),
   knownUpdate: () => invoke<UpdateInfo | null>("known_update"),
-  /** Po udanej instalacji aplikacja uruchamia się ponownie – Promise rozwiązuje się tylko przy błędzie. */
+  /** After a successful install the app restarts, so the Promise settles only on error. */
   installUpdate: () => invoke<void>("install_update"),
   onUpdateStatus: (cb: (u: UpdateInfo | null) => void): Promise<UnlistenFn> =>
     listen<UpdateInfo | null>("update://status", (e) => cb(e.payload)),
@@ -273,7 +264,7 @@ export const api = {
     listen<UpdateProgress>("update://progress", (e) => cb(e.payload)),
 };
 
-/** Komunikat błędu z komendy Tauri (odrzucone Promise niesie string). */
+/** Error message from a Tauri command (the rejected Promise carries a string). */
 export function errorMessage(e: unknown): string {
   if (typeof e === "string") return e;
   if (e instanceof Error) return e.message;

@@ -111,7 +111,6 @@ struct ProgressEvent {
     files: u64,
     dirs: u64,
     bytes: u64,
-    errors: u64,
     current: String,
     elapsed_ms: u64,
     done: bool,
@@ -125,18 +124,11 @@ fn progress_event(scan_id: u64, ctl: &ScanControl, started: Instant, done: bool)
         files: p.files.load(Relaxed),
         dirs: p.dirs.load(Relaxed),
         bytes: p.bytes.load(Relaxed),
-        errors: p.errors.load(Relaxed),
         current: p.current.lock().clone(),
         elapsed_ms: started.elapsed().as_millis() as u64,
         done,
         cancelled: ctl.cancelled(),
     }
-}
-
-/// System operacyjny („macos”, „windows”, „linux”) – UI dobiera etykiety i skróty.
-#[tauri::command]
-pub fn platform() -> &'static str {
-    std::env::consts::OS
 }
 
 /// Folder podany w argumentach uruchomienia (`Disk Lens <folder>`), jeśli istnieje.
@@ -209,7 +201,6 @@ pub struct TreeInfo {
     dirs: u32,
     skipped: usize,
     scanned_at: i64,
-    nodes: usize,
     /// Wolumen korzenia skanu (`None`, gdy ścieżki już nie ma, np. wczytany skan z innego dysku).
     volume: Option<VolumeInfo>,
     coverage: Option<Coverage>,
@@ -243,7 +234,6 @@ pub async fn tree_info(state: State<'_, AppState>) -> Res<Option<TreeInfo>> {
         dirs: root.dirs,
         skipped: t.skipped.len(),
         scanned_at: t.scanned_at,
-        nodes: t.len(),
         coverage: vol.as_ref().map(|v| volume::coverage(v, root.alloc)),
         volume: vol,
     }))
@@ -290,10 +280,7 @@ pub async fn treemap_layout(
     width: f64,
     height: f64,
 ) -> Res<tauri::ipc::Response> {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
+    let now = crate::platform::now_secs();
     let bytes = with_view(&state, &view, |v| {
         check_id(v.tree, root)?;
         let opts = treemap::Options {
@@ -377,7 +364,6 @@ pub async fn open_privacy_settings() -> Res<()> {
 pub struct TrashCheck {
     path: String,
     alloc: u64,
-    logical: u64,
     files: u32,
     blocked: Option<String>,
 }
@@ -395,7 +381,6 @@ pub async fn trash_check(state: State<'_, AppState>, id: u32) -> Res<TrashCheck>
     Ok(TrashCheck {
         path: p.to_string_lossy().into_owned(),
         alloc: n.alloc,
-        logical: n.logical,
         files: n.files + u32::from(!n.kind.is_dir()),
         blocked,
     })
