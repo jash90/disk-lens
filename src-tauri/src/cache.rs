@@ -50,6 +50,11 @@ pub fn store(dir: &Path, tree: &Tree) -> Result<(), String> {
     written
 }
 
+/// How long ago the scan of `root` was written; `None` when there is none.
+pub fn age(dir: &Path, root: &Path) -> Option<std::time::Duration> {
+    fs::metadata(path_for(dir, root)).ok()?.modified().ok()?.elapsed().ok()
+}
+
 /// The kept scan of `root`, if there is a readable one.
 pub fn load(dir: &Path, root: &Path) -> Option<Tree> {
     let file = path_for(dir, root);
@@ -96,6 +101,7 @@ mod tests {
         let loaded = load(&scans, Path::new("/a")).unwrap();
         assert_eq!((loaded.state.event_id, loaded.node(ROOT).alloc), (42, a.node(ROOT).alloc));
         assert!(load(&scans, Path::new("/c")).is_none());
+        assert!(age(&scans, Path::new("/a")).is_some_and(|d| d.as_secs() < 60) && age(&scans, Path::new("/c")).is_none());
     }
 
     #[test]

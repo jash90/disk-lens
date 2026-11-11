@@ -16,6 +16,10 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 /// Reading the event log is given this long before a full scan is the better deal.
 const EVENT_LOG_TIMEOUT: Duration = Duration::from_secs(20);
+/// After a refresh the kept scan is written again when it is older than this…
+const REWRITE_AFTER: Duration = Duration::from_secs(30 * 60);
+/// …or when the refresh looked at this many changed folders.
+const REWRITE_AFTER_FOLDERS: u64 = 20_000;
 
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -163,8 +167,15 @@ pub async fn scan_start(app: AppHandle, state: State<'_, AppState>, path: String
             let checked = refreshed.as_ref().map_or(0, |s| (s.listed + s.rescanned) as u64);
             let _ = app.emit("scan://progress", progress_event(seq, &ctl, started, true, refreshed.is_some(), checked));
 
-            // Kept for the next start; the window is usable while this is written.
-            if let Some(dir) = cache_dir.filter(|_| !ctl.cancelled() && !cross_volumes) {
+            // Kept for the next start; the window is usable while this is written. Writing a
+            // whole disk takes seconds during which the tree cannot change, so after a refresh
+            // the kept scan is replaced only when it has fallen well behind: the event log
+            // bridges the gap next time.
+            let worth_keeping = match &refreshed {
+                None => true,
+                Some(_) => checked >= REWRITE_AFTER_FOLDERS || cache_dir.as_deref().and_then(|d| cache::age(d, &root)).is_none_or(|age| age >= REWRITE_AFTER),
+            };
+            if let Some(dir) = cache_dir.filter(|_| worth_keeping && !ctl.cancelled() && !cross_volumes) {
                 let t = shared.read();
                 if t.len() >= cache::MIN_NODES {
                     let _ = cache::store(&dir, &t);
