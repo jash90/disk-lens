@@ -231,6 +231,15 @@ pub(crate) struct Classified {
 }
 
 impl Ctx<'_> {
+    /// Whether the scan goes into the folder `path` that lives on device `dev`.
+    pub(crate) fn may_enter(&self, path: &Path, dev: Option<u64>) -> bool {
+        let same_volume = match (&self.allowed_devs, dev) {
+            (Some(devs), Some(d)) => devs.contains(&d),
+            _ => true,
+        };
+        (same_volume || self.opts.cross_volumes) && !self.skip_paths.iter().any(|p| p == path)
+    }
+
     /// Turns a raw entry of `dir_path` into a tree entry: hard-link duplicates count as 0 bytes,
     /// folders on another volume (or on the skip list) are marked and not entered.
     ///
@@ -246,15 +255,10 @@ impl Ctx<'_> {
         let mut descend = None;
         if entry.kind.is_dir() {
             let child_path = dir_path.join(raw.name);
-            let same_volume = match (&self.allowed_devs, raw.dev) {
-                (Some(devs), Some(d)) => devs.contains(&d),
-                _ => true,
-            };
-            let skip = self.skip_paths.iter().any(|p| p == &child_path);
-            if skip || (!same_volume && !self.opts.cross_volumes) {
-                entry.flags |= flags::OTHER_VOLUME;
-            } else {
+            if self.may_enter(&child_path, raw.dev) {
                 descend = Some((child_path, raw.dev));
+            } else {
+                entry.flags |= flags::OTHER_VOLUME;
             }
         }
         Classified { entry, descend, link: raw.hardlink }

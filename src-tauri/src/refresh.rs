@@ -109,6 +109,17 @@ fn refresh_dir<'s>(s: &rayon::Scope<'s>, ctx: &'s Ctx<'s>, id: u32, recursive: b
     };
     let dev = platform::device(&meta);
     let own = entry_from_meta(String::new(), &meta);
+    if id != ROOT && !ctx.may_enter(&path, dev) {
+        // Another volume was mounted here since the scan.
+        let mut t = ctx.tree.write();
+        if t.is_attached(id) {
+            t.clear_children(id);
+            forget_skipped(&mut t, &path);
+            t.update_own(id, &own, true);
+            t.nodes[id as usize].flags |= flags::OTHER_VOLUME;
+        }
+        return;
+    }
 
     if recursive {
         {
@@ -155,7 +166,9 @@ fn refresh_dir<'s>(s: &rayon::Scope<'s>, ctx: &'s Ctx<'s>, id: u32, recursive: b
         for item in listed {
             match existing.remove(&item.entry.name) {
                 Some(child) if t.node(child).kind == item.entry.kind => {
-                    update_child(&mut t, child, &item);
+                    if update_child(&mut t, child, &item) {
+                        to_scan.extend(item.descend.map(|(p, d)| (child, p, d)));
+                    }
                 }
                 Some(child) => {
                     forget_skipped(&mut t, &path.join(&item.entry.name));
@@ -197,19 +210,23 @@ fn refresh_dir<'s>(s: &rayon::Scope<'s>, ctx: &'s Ctx<'s>, id: u32, recursive: b
 }
 
 /// An entry that is in the tree already: only its own data can have changed. A subfolder keeps
-/// its children; if its content changed, it is on the list of changes itself.
-fn update_child(t: &mut Tree, child: u32, item: &Classified) {
+/// its children; if its content changed, it is on the list of changes itself. Returns true when
+/// the folder was closed (another volume) and is open now, so it has to be scanned.
+fn update_child(t: &mut Tree, child: u32, item: &Classified) -> bool {
     let was_closed = t.node(child).flags & flags::OTHER_VOLUME != 0;
     let is_closed = item.entry.flags & flags::OTHER_VOLUME != 0;
     if is_closed && !was_closed {
         t.clear_children(child);
         t.nodes[child as usize].flags |= flags::OTHER_VOLUME;
+    } else if was_closed && !is_closed {
+        t.nodes[child as usize].flags &= !flags::OTHER_VOLUME;
     }
     t.update_own(child, &item.entry, false);
     if let Some((dev, ino)) = item.link {
         // The file may have gained its second link only now; duplicates are dropped later.
         t.state.links.push(Link { dev, ino, id: child });
     }
+    was_closed && !is_closed
 }
 
 fn remove(ctx: &Ctx<'_>, id: u32, path: &Path) {
