@@ -6,6 +6,7 @@ pub mod model;
 pub mod persist;
 pub mod platform;
 pub mod query;
+pub mod refresh;
 pub mod scanner;
 pub mod stale;
 pub mod trash_batch;
