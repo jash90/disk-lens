@@ -5,7 +5,8 @@
 //! instead of `getattrlistbulk`), `--queries` (time of the view queries), `--save FILE` (writes
 //! the scan with its position in the event log), `--refresh FILE` (instead of scanning: loads
 //! FILE, reads only what changed since and prints the time of each step), `--compare FILE`
-//! (counts entries whose size differs from the scan in FILE). With `--features scan-stats` the
+//! (counts entries whose size differs from the scan in FILE; `--refresh-other` refreshes that
+//! scan first). With `--features scan-stats` the
 //! time is broken down.
 
 use disk_lens_lib::fsevents;
@@ -103,10 +104,19 @@ fn main() {
     println!("entries/s {:.0}", tree.len() as f64 / median);
 
     if let Some(file) = text_flag(&args, "--compare") {
-        let other = persist::load(file.as_ref()).expect("cannot load the scan to compare with");
+        // With `--refresh-other` the other scan is brought up to date first, so that both
+        // describe the disk at (nearly) the same moment.
+        let other = if args.iter().any(|a| a == "--refresh-other") {
+            refresh_from(&file, path.as_ref(), &opts)
+        } else {
+            persist::load(file.as_ref()).expect("cannot load the scan to compare with")
+        };
         let diff = persist::diff(&other, &tree, SizeMode::Alloc, usize::MAX);
         let o = other.node(ROOT);
         println!("compare   {} entries differ; other: alloc_kib {} files {} dirs {} skipped {}", diff.entries.len(), o.alloc / 1024, o.files, o.dirs, other.skipped.len());
+        for e in diff.entries.iter().filter(|e| !e.is_dir).take(40) {
+            println!("  {:<8} {:>12} {}", e.status, e.delta, e.path);
+        }
     }
     if let Some(file) = text_flag(&args, "--save") {
         let step = Instant::now();
