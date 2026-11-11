@@ -105,6 +105,55 @@ pub fn save(tree: &Tree, path: &Path) -> Result<(), String> {
     encoder.finish().map_err(io)?.flush().map_err(io)
 }
 
+/// A large temporary buffer that goes back to the system the moment it is dropped. Freed
+/// through the allocator, a block of this size (hundreds of megabytes for a whole disk) stays
+/// in the process as reusable memory and keeps counting against it.
+struct Scratch {
+    #[cfg(unix)]
+    ptr: *mut u8,
+    #[cfg(unix)]
+    len: usize,
+    #[cfg(not(unix))]
+    bytes: Vec<u8>,
+}
+
+#[cfg(unix)]
+impl Scratch {
+    fn new(len: usize) -> io::Result<Self> {
+        let len = len.max(1);
+        // SAFETY: an anonymous private mapping; the result is checked before use.
+        let ptr = unsafe { libc::mmap(std::ptr::null_mut(), len, libc::PROT_READ | libc::PROT_WRITE, libc::MAP_PRIVATE | libc::MAP_ANON, -1, 0) };
+        if ptr == libc::MAP_FAILED {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(Scratch { ptr: ptr.cast(), len })
+    }
+
+    fn as_mut(&mut self) -> &mut [u8] {
+        // SAFETY: `ptr` is a live, zero-filled mapping of `len` bytes owned by `self`.
+        unsafe { std::slice::from_raw_parts_mut(self.ptr, self.len) }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        // SAFETY: the mapping made in `new`; nothing borrows it any more.
+        unsafe { libc::munmap(self.ptr.cast(), self.len) };
+    }
+}
+
+#[cfg(not(unix))]
+impl Scratch {
+    fn new(len: usize) -> io::Result<Self> {
+        Ok(Scratch { bytes: vec![0; len] })
+    }
+
+    fn as_mut(&mut self) -> &mut [u8] {
+        &mut self.bytes
+    }
+}
+
 pub fn load(path: &Path) -> Result<Tree, String> {
     let io = |e: std::io::Error| e.to_string();
     let mut file = fs::File::open(path).map_err(io)?;
@@ -125,9 +174,9 @@ pub fn load(path: &Path) -> Result<Tree, String> {
         if size > MAX_TEXT {
             return Err("Uszkodzony plik skanu: nieprawidłowy nagłówek.".into());
         }
-        let mut text = vec![0u8; size as usize];
+        let mut text = Scratch::new(size as usize).map_err(io)?;
         let reader = io::BufReader::with_capacity(1 << 20, zstd::Decoder::new(file).map_err(io)?);
-        let (mut tree, rest) = postcard::from_io::<Tree, _>((reader, &mut text)).map_err(corrupt)?;
+        let (mut tree, rest) = postcard::from_io::<Tree, _>((reader, text.as_mut())).map_err(corrupt)?;
         tree.state = postcard::from_io::<ScanState, _>(rest).map_err(corrupt)?.0;
         tree
     } else {
