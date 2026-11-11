@@ -1,7 +1,10 @@
-//! Drzewo wyników skanu jako arena: węzły w jednym `Vec`, powiązania przez indeksy `u32`.
+//! The scan result tree as an arena: nodes in one `Vec`, linked by `u32` indices.
 //!
-//! Dzieci zawsze mają większy indeks niż rodzic (dodawane są po nim), co pozwala liczyć
-//! sumy przefiltrowane jednym przebiegiem od końca tablicy.
+//! Children always have a larger index than their parent (they are added after it), which lets
+//! per-subtree values be computed in one pass from the end of the array.
+//!
+//! `Tree`, `Node`, `Kind` and `Skipped` are written to `.disklens` files as they are (see
+//! `persist`): changing their fields, field order or variant order changes the file format.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -14,7 +17,7 @@ pub const ROOT: u32 = 0;
 pub enum Kind {
     File,
     Dir,
-    /// Pakiet macOS (`.app`, `.photoslibrary`…): skanowany w całości, ale prezentowany jako jeden węzeł.
+    /// macOS package (`.app`, `.photoslibrary`…): scanned in full, but presented as one node.
     Package,
     Symlink,
     Other,
@@ -38,25 +41,25 @@ impl Kind {
 
 pub mod flags {
     pub const HIDDEN: u8 = 1 << 0;
-    /// Placeholder iCloud (SF_DATALESS) – zawartość nie jest na dysku.
+    /// iCloud placeholder (SF_DATALESS): the content is not on disk.
     pub const DATALESS: u8 = 1 << 1;
-    /// Nie udało się odczytać zawartości folderu.
+    /// The folder's content could not be read.
     pub const UNREADABLE: u8 = 1 << 2;
-    /// Kolejne twarde dowiązanie do już policzonego i-węzła (rozmiar liczony jako 0).
+    /// Another hard link to an inode already counted (its size counts as 0).
     pub const HARDLINK_DUP: u8 = 1 << 3;
-    /// Punkt montowania innego wolumenu – nie wchodzimy do środka.
+    /// Mount point of another volume: not entered.
     pub const OTHER_VOLUME: u8 = 1 << 4;
-    /// Węzeł usunięty z drzewa (kosz / reskan); zostaje w arenie jako nieosiągalny.
+    /// Node removed from the tree (Trash / rescan); it stays in the arena, unreachable.
     pub const REMOVED: u8 = 1 << 5;
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum SizeMode {
-    /// Miejsce faktycznie zajęte na dysku (`st_blocks * 512`).
+    /// Space actually allocated on disk (`st_blocks * 512`).
     #[default]
     Alloc,
-    /// Rozmiar logiczny (`st_size`).
+    /// Logical size (`st_size`).
     Logical,
 }
 
@@ -70,14 +73,20 @@ pub struct Node {
     pub kind: Kind,
     pub flags: u8,
     pub cat: u8,
-    /// Dla folderów: suma poddrzewa łącznie z blokami samego folderu.
+    /// For folders: the subtree total including the folder's own blocks.
     pub alloc: u64,
     pub logical: u64,
-    /// Liczba plików (nie-folderów) w poddrzewie, bez samego węzła.
+    /// Number of files (non-folders) in the subtree, without the node itself.
     pub files: u32,
-    /// Liczba folderów w poddrzewie, bez samego węzła.
+    /// Number of folders in the subtree, without the node itself.
     pub dirs: u32,
+    /// Own modification time, Unix seconds; 0 when unknown.
     pub mtime: i64,
+    /// Own last access time, Unix seconds; 0 when unknown.
+    pub atime: u32,
+    /// When the item appeared on this disk: the newest of its creation time and, where the
+    /// system reports it, the time it was added to its folder. Unix seconds; 0 when unknown.
+    pub created: u32,
 }
 
 impl Node {
@@ -93,7 +102,7 @@ impl Node {
     }
 }
 
-/// Wpis gotowy do wstawienia do drzewa (wynik `lstat`).
+/// An entry ready to be inserted into the tree (the result of `lstat`).
 #[derive(Clone, Debug)]
 pub struct NewEntry {
     pub name: String,
@@ -103,6 +112,8 @@ pub struct NewEntry {
     pub alloc: u64,
     pub logical: u64,
     pub mtime: i64,
+    pub atime: u32,
+    pub created: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -126,15 +137,15 @@ pub struct Tree {
     pub nodes: Vec<Node>,
     pub names: String,
     pub skipped: Vec<Skipped>,
-    /// Unix timestamp (s) rozpoczęcia skanu.
+    /// Unix timestamp (s) of the start of the scan.
     pub scanned_at: i64,
-    /// Rośnie przy każdej zmianie – unieważnia cache filtrów.
+    /// Grows on every change: invalidates the per-view caches.
     #[serde(skip)]
     pub generation: u64,
 }
 
 impl Tree {
-    /// Nowe drzewo z samym korzeniem. Nazwą korzenia jest pełna ścieżka.
+    /// A new tree with only the root. The root's name is the full path.
     pub fn new(root_path: PathBuf, mut root: NewEntry, scanned_at: i64) -> Self {
         root.name = root_path.to_string_lossy().into_owned();
         let mut t = Tree {
@@ -174,7 +185,7 @@ impl Tree {
     fn push_node(&mut self, parent: u32, e: NewEntry) -> u32 {
         let id = self.nodes.len() as u32;
         let name_off = self.names.len() as u32;
-        // Nazwy w APFS/HFS+ mają ≤ 255 znaków UTF-8, więc u16 wystarcza z zapasem.
+        // Names on APFS/HFS+ have ≤ 255 UTF-8 characters, so u16 is enough with room to spare.
         let name = truncate_utf8(&e.name, u16::MAX as usize);
         self.names.push_str(name);
         let next_sibling = if parent == NONE {
@@ -196,6 +207,8 @@ impl Tree {
             files: 0,
             dirs: 0,
             mtime: e.mtime,
+            atime: e.atime,
+            created: e.created,
         });
         if parent != NONE {
             self.nodes[parent as usize].first_child = id;
@@ -203,7 +216,7 @@ impl Tree {
         id
     }
 
-    /// Wstawia dzieci folderu i dolicza ich sumy do wszystkich przodków. Zwraca indeksy w kolejności wejścia.
+    /// Inserts the children of a folder and adds their totals to all ancestors. Returns ids in input order.
     pub fn add_children(&mut self, parent: u32, entries: Vec<NewEntry>) -> Vec<u32> {
         let mut t = Totals::default();
         let mut ids = Vec::with_capacity(entries.len());
@@ -221,7 +234,7 @@ impl Tree {
         ids
     }
 
-    /// Dolicza (`add = true`) lub odejmuje sumy od węzła `from` i wszystkich jego przodków.
+    /// Adds (`add = true`) or subtracts totals on the node `from` and all its ancestors.
     fn apply(&mut self, from: u32, t: Totals, add: bool) {
         let mut cur = from;
         while cur != NONE {
@@ -249,7 +262,7 @@ impl Tree {
         }
     }
 
-    /// Łańcuch od korzenia do `id` włącznie.
+    /// The chain from the root down to `id`, inclusive.
     pub fn ancestors(&self, id: u32) -> Vec<u32> {
         let mut out = Vec::new();
         let mut cur = id;
@@ -270,7 +283,7 @@ impl Tree {
         p
     }
 
-    /// Ścieżka względem `base` (np. bieżącego korzenia widoku).
+    /// Path relative to `base` (e.g. the current view root).
     pub fn rel_path(&self, base: u32, id: u32) -> String {
         let chain = self.ancestors(id);
         let start = chain.iter().position(|&a| a == base).map(|i| i + 1).unwrap_or(1);
@@ -303,14 +316,14 @@ impl Tree {
         }
     }
 
-    /// Odpina węzeł (np. po przeniesieniu do Kosza) i odejmuje jego rozmiar od przodków.
+    /// Detaches a node (e.g. after moving it to the Trash) and subtracts its size from the ancestors.
     pub fn detach(&mut self, id: u32) {
         let parent = self.node(id).parent;
         if parent == NONE || !self.node(id).is_live() {
             return;
         }
         let t = self.subtree_totals(id);
-        // Usunięcie z listy jednokierunkowej rodzeństwa.
+        // Removal from the singly linked list of siblings.
         let next = self.node(id).next_sibling;
         if self.node(parent).first_child == id {
             self.nodes[parent as usize].first_child = next;
@@ -328,7 +341,7 @@ impl Tree {
         self.apply(parent, t, false);
     }
 
-    /// Usuwa wszystkie dzieci folderu (przed reskanem). Sam folder zostaje z rozmiarem własnych bloków.
+    /// Removes all children of a folder (before a rescan). The folder keeps the size of its own blocks.
     pub fn clear_children(&mut self, id: u32) {
         let mut t = Totals::default();
         let mut cur = self.node(id).first_child;
@@ -346,16 +359,20 @@ impl Tree {
         self.apply(id, t, false);
     }
 
-    /// Nadpisuje „własne” metadane folderu (po ponownym `lstat` przy reskanie).
-    pub fn set_own(&mut self, id: u32, alloc: u64, logical: u64, mtime: i64) {
+    /// Overwrites the node's own metadata (after a fresh `lstat` during a rescan). Only the
+    /// sizes and times of `own` are used.
+    pub fn set_own(&mut self, id: u32, own: &NewEntry) {
+        let (alloc, logical) = (own.alloc, own.logical);
         let n = self.node(id);
         let (old_alloc, old_logical) = (n.alloc, n.logical);
-        // Po clear_children rozmiar węzła = jego własne bloki.
+        // After clear_children the node's size is its own blocks.
         let t_old = Totals { alloc: old_alloc, logical: old_logical, files: 0, dirs: 0 };
         let parent = n.parent;
         self.nodes[id as usize].alloc = alloc;
         self.nodes[id as usize].logical = logical;
-        self.nodes[id as usize].mtime = mtime;
+        self.nodes[id as usize].mtime = own.mtime;
+        self.nodes[id as usize].atime = own.atime;
+        self.nodes[id as usize].created = own.created;
         if parent != NONE {
             self.apply(parent, t_old, false);
             self.apply(parent, Totals { alloc, logical, files: 0, dirs: 0 }, true);
@@ -392,7 +409,7 @@ fn truncate_utf8(s: &str, max: usize) -> &str {
     &s[..end]
 }
 
-/// Rozszerzenie pliku małymi literami (bez kropki); pusty napis, gdy brak.
+/// File extension in lower case (without the dot); empty when there is none.
 pub fn extension_of(name: &str) -> String {
     match name.rfind('.') {
         Some(i) if i > 0 && i + 1 < name.len() => name[i + 1..].to_ascii_lowercase(),
@@ -406,7 +423,7 @@ pub(crate) mod testutil {
     use super::*;
 
     pub fn entry(name: &str, kind: Kind, size: u64) -> NewEntry {
-        NewEntry { name: name.into(), kind, flags: 0, cat: 0, alloc: size, logical: size, mtime: 0 }
+        NewEntry { name: name.into(), kind, flags: 0, cat: 0, alloc: size, logical: size, mtime: 0, atime: 0, created: 0 }
     }
 
     pub fn entry_at(name: &str, kind: Kind, size: u64, mtime: i64) -> NewEntry {

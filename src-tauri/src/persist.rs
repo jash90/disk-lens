@@ -1,36 +1,107 @@
 //! Saving/loading a scan, exporting a view to CSV/JSON and comparing two scans.
 
-use crate::model::{SizeMode, Tree, ROOT};
+use crate::model::{Kind, Node, SizeMode, Skipped, Tree, ROOT};
 use crate::query::{Row, View};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-const MAGIC: &[u8; 8] = b"DLENS\0\0\x01";
+/// File header: 7 fixed bytes, then the format version.
+const MAGIC_PREFIX: &[u8; 7] = b"DLENS\0\0";
+/// Version 2 added `Node::atime` and `Node::created`.
+const VERSION: u8 = 2;
 
 #[derive(Serialize, Deserialize)]
 struct SavedScan {
     tree: Tree,
 }
 
+/// The version 1 layout (Disk Lens 0.2–0.3), frozen so that old files keep loading.
+mod v1 {
+    use super::*;
+
+    #[derive(Deserialize)]
+    pub struct NodeV1 {
+        parent: u32,
+        first_child: u32,
+        next_sibling: u32,
+        name_off: u32,
+        name_len: u16,
+        kind: Kind,
+        flags: u8,
+        cat: u8,
+        alloc: u64,
+        logical: u64,
+        files: u32,
+        dirs: u32,
+        mtime: i64,
+    }
+
+    #[derive(Deserialize)]
+    pub struct TreeV1 {
+        root_path: PathBuf,
+        nodes: Vec<NodeV1>,
+        names: String,
+        skipped: Vec<Skipped>,
+        scanned_at: i64,
+    }
+
+    impl From<TreeV1> for Tree {
+        /// Access and creation times were not recorded: they become 0 ("unknown").
+        fn from(t: TreeV1) -> Tree {
+            let nodes = t
+                .nodes
+                .into_iter()
+                .map(|n| Node {
+                    parent: n.parent,
+                    first_child: n.first_child,
+                    next_sibling: n.next_sibling,
+                    name_off: n.name_off,
+                    name_len: n.name_len,
+                    kind: n.kind,
+                    flags: n.flags,
+                    cat: n.cat,
+                    alloc: n.alloc,
+                    logical: n.logical,
+                    files: n.files,
+                    dirs: n.dirs,
+                    mtime: n.mtime,
+                    atime: 0,
+                    created: 0,
+                })
+                .collect();
+            Tree { root_path: t.root_path, nodes, names: t.names, skipped: t.skipped, scanned_at: t.scanned_at, generation: 0 }
+        }
+    }
+}
+
 pub fn save(tree: &Tree, path: &Path) -> Result<(), String> {
     let bytes = postcard::to_allocvec(&SavedScan { tree: tree.clone() }).map_err(|e| e.to_string())?;
     let compressed = zstd::encode_all(&bytes[..], 3).map_err(|e| e.to_string())?;
-    let mut out = Vec::with_capacity(compressed.len() + MAGIC.len());
-    out.extend_from_slice(MAGIC);
+    let mut out = Vec::with_capacity(compressed.len() + MAGIC_PREFIX.len() + 1);
+    out.extend_from_slice(MAGIC_PREFIX);
+    out.push(VERSION);
     out.extend_from_slice(&compressed);
     fs::write(path, out).map_err(|e| e.to_string())
 }
 
 pub fn load(path: &Path) -> Result<Tree, String> {
     let data = fs::read(path).map_err(|e| e.to_string())?;
-    if data.len() < MAGIC.len() || &data[..MAGIC.len()] != MAGIC {
-        return Err("To nie jest plik skanu disk-lens (.disklens) albo pochodzi z innej wersji.".into());
+    let header = MAGIC_PREFIX.len() + 1;
+    if data.len() < header || &data[..MAGIC_PREFIX.len()] != MAGIC_PREFIX {
+        return Err("To nie jest plik skanu Disk Lens (.disklens).".into());
     }
-    let raw = zstd::decode_all(&data[MAGIC.len()..]).map_err(|e| e.to_string())?;
-    let saved: SavedScan = postcard::from_bytes(&raw).map_err(|e| format!("Uszkodzony plik skanu: {e}"))?;
-    let mut tree = saved.tree;
+    let version = data[MAGIC_PREFIX.len()];
+    if !(1..=VERSION).contains(&version) {
+        return Err("Ten plik skanu pochodzi z nowszej wersji Disk Lens. Zaktualizuj aplikację.".into());
+    }
+    let raw = zstd::decode_all(&data[header..]).map_err(|e| e.to_string())?;
+    let corrupt = |e: postcard::Error| format!("Uszkodzony plik skanu: {e}");
+    let mut tree = match version {
+        1 => postcard::from_bytes::<v1::TreeV1>(&raw).map_err(corrupt)?.into(),
+        _ => postcard::from_bytes::<SavedScan>(&raw).map_err(corrupt)?.tree,
+    };
     tree.generation = 1;
     Ok(tree)
 }
@@ -258,6 +329,44 @@ mod tests {
         assert_eq!(find("d/a").status, "grown");
         assert_eq!(find("d/b").status, "removed");
         assert_eq!(find("d/c").status, "added");
+    }
+
+    #[test]
+    fn loads_a_file_saved_by_format_version_1() {
+        let t = load(Path::new("tests/fixtures/v1.disklens")).unwrap();
+        let expected = sample_tree();
+        assert_eq!(t.len(), expected.len());
+        assert_eq!(t.root_path, PathBuf::from("/r"));
+        assert_eq!(t.scanned_at, 1_700_000_000);
+        assert_eq!(t.skipped.len(), 1);
+        assert_eq!(t.node(ROOT).alloc, 6310);
+        for id in 0..t.len() as u32 {
+            let (a, b) = (t.node(id), expected.node(id));
+            assert_eq!((t.name(id), a.kind, a.alloc, a.files, a.mtime), (expected.name(id), b.kind, b.alloc, b.files, b.mtime));
+            assert_eq!((a.atime, a.created), (0, 0), "times the old format did not record are unknown");
+        }
+    }
+
+    #[test]
+    fn roundtrip_keeps_access_and_creation_times() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.disklens");
+        let mut t = sample_tree();
+        t.nodes[1].atime = 1_600_000_000;
+        t.nodes[1].created = 1_500_000_000;
+        save(&t, &p).unwrap();
+        let loaded = load(&p).unwrap();
+        assert_eq!((loaded.node(1).atime, loaded.node(1).created), (1_600_000_000, 1_500_000_000));
+    }
+
+    #[test]
+    fn rejects_foreign_and_newer_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("x.disklens");
+        fs::write(&p, b"not a scan").unwrap();
+        assert!(load(&p).is_err());
+        fs::write(&p, b"DLENS\0\0\x63rest").unwrap();
+        assert!(load(&p).unwrap_err().contains("nowszej"));
     }
 
     #[test]

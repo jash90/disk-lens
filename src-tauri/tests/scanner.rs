@@ -1,4 +1,4 @@
-//! Testy skanera na drzewie fikstur tworzonym w katalogu tymczasowym (Unix: bloki, i-węzły, chmod).
+//! Scanner tests on a fixture tree created in a temporary directory (Unix: blocks, inodes, chmod).
 #![cfg(unix)]
 
 use disk_lens_lib::model::{flags, Kind, Tree, ROOT};
@@ -26,7 +26,7 @@ fn alloc(path: &Path) -> u64 {
 }
 
 fn find(tree: &Tree, parent: u32, name: &str) -> u32 {
-    tree.children(parent).find(|&c| tree.name(c) == name).unwrap_or_else(|| panic!("brak {name}"))
+    tree.children(parent).find(|&c| tree.name(c) == name).unwrap_or_else(|| panic!("missing {name}"))
 }
 
 fn opts() -> ScanOptions {
@@ -208,7 +208,7 @@ fn matches_du() {
 
 #[test]
 fn trash_moves_file_without_finder() {
-    // Prawdziwy Kosz użytkownika – plik o unikalnej nazwie, sprzątamy go po teście.
+    // The user's real Trash: a uniquely named file, cleaned up after the test.
     let d = tempfile::tempdir().unwrap();
     let name = format!("disk-lens-test-{}.bin", std::process::id());
     let p = d.path().join(&name);
@@ -223,9 +223,9 @@ fn trash_moves_file_without_finder() {
 
 type Snapshot = BTreeMap<String, (Kind, u8, u64, u64, i64, u32, u32)>;
 
-/// Drzewo spłaszczone do ścieżka → (rodzaj, flagi, alloc, logical, mtime, pliki, foldery).
-/// Który z twardych dowiązań dostanie HARDLINK_DUP, zależy od kolejności wątków, więc dla plików
-/// z kilkoma dowiązaniami porównujemy tylko rodzaj – sumy folderów i tak muszą się zgadzać.
+/// The tree flattened to path → (kind, flags, alloc, logical, mtime, files, folders).
+/// Which of several hard links gets HARDLINK_DUP depends on thread order, so for files with
+/// several links only the kind is compared; folder totals have to agree anyway.
 fn snapshot(t: &Tree, root: &Path) -> Snapshot {
     let mut out = BTreeMap::new();
     let mut stack = vec![(ROOT, String::new())];
@@ -264,7 +264,7 @@ fn bulk_and_std_listing_build_identical_trees() {
     let fifo = std::ffi::CString::new(r.join("pipe").as_os_str().as_encoded_bytes()).unwrap();
     assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o644) }, 0);
     File::create(r.join("sparse.img")).unwrap().set_len(64 * 1024 * 1024).unwrap();
-    // Tyle wpisów, żeby folder nie zmieścił się w jednej paczce getattrlistbulk.
+    // Enough entries that the folder does not fit in one getattrlistbulk batch.
     for i in 0..5000 {
         write(&r.join(format!("many/file-with-a-longish-name-{i:05}.dat")), i % 9000);
     }
@@ -278,6 +278,61 @@ fn bulk_and_std_listing_build_identical_trees() {
     assert_eq!(kind(&fast, "pipe"), Kind::Other);
     assert_eq!(kind(&fast, "sym-broken"), Kind::Symlink);
     assert_eq!(fast.node(find(&fast, ROOT, "many")).files, 5000);
+}
+
+#[test]
+fn bulk_and_std_agree_on_access_and_creation_times() {
+    let d = tempfile::tempdir().unwrap();
+    let r = d.path();
+    write(&r.join("fresh.bin"), 100);
+    write(&r.join("sub/nested.bin"), 100);
+    write(&r.join("old.bin"), 100);
+    let (accessed, modified) = (1_000_000_000, 1_100_000_000);
+    let at = |secs: u64| std::time::UNIX_EPOCH + Duration::from_secs(secs);
+    File::options()
+        .write(true)
+        .open(r.join("old.bin"))
+        .unwrap()
+        .set_times(fs::FileTimes::new().set_accessed(at(accessed)).set_modified(at(modified)))
+        .unwrap();
+
+    let (fast, slow) = scan_both(r);
+    let now = disk_lens_lib::platform::now_secs() as u32;
+    let mut stack = vec![(ROOT, r.to_path_buf())];
+    let mut files = 0;
+    while let Some((id, path)) = stack.pop() {
+        for c in slow.children(id) {
+            let p = path.join(slow.name(c));
+            let (s, f) = (slow.node(c), fast.node(find(&fast, find_path(&fast, r, &path), slow.name(c))));
+            if s.kind == Kind::Dir {
+                stack.push((c, p));
+                continue;
+            }
+            files += 1;
+            let meta = fs::symlink_metadata(&p).unwrap();
+            assert_eq!(s.atime, disk_lens_lib::platform::atime(&meta), "std atime of {p:?}");
+            assert_eq!(f.atime, s.atime, "bulk and std atime of {p:?}");
+            assert_eq!(s.created, disk_lens_lib::platform::created(&meta), "std creation time of {p:?}");
+            // The bulk path also knows when the entry was added to its folder, which can only be later.
+            assert!(f.created >= s.created && f.created <= now + 1, "bulk creation time of {p:?}: {} vs {}", f.created, s.created);
+        }
+    }
+    assert_eq!(files, 3);
+    let old = slow.node(find(&slow, ROOT, "old.bin"));
+    assert_eq!((old.atime as u64, old.mtime as u64), (accessed, modified));
+    // macOS: setting an old modification time moves the birth time back with it, but the file
+    // was still added to its folder just now, and only the bulk read reports that.
+    #[cfg(target_os = "macos")]
+    {
+        let added = fast.node(find(&fast, ROOT, "old.bin")).created;
+        assert!(added + 60 >= now, "date added should be recent, got {added}");
+        assert!((old.created as u64) < accessed + 200_000_000, "birth time follows the old mtime, got {}", old.created);
+    }
+}
+
+/// Id of the folder `path` (somewhere under `root`) in `tree`.
+fn find_path(tree: &Tree, root: &Path, path: &Path) -> u32 {
+    path.strip_prefix(root).unwrap().components().fold(ROOT, |id, c| find(tree, id, &c.as_os_str().to_string_lossy()))
 }
 
 #[test]

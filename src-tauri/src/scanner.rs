@@ -137,6 +137,8 @@ pub fn entry_from_raw(name: String, raw: &RawEntry) -> NewEntry {
         alloc: raw.alloc,
         logical: raw.logical,
         mtime: raw.mtime,
+        atime: raw.atime,
+        created: raw.btime.max(raw.added),
     }
 }
 
@@ -349,7 +351,7 @@ pub fn rescan(tree: &RwLock<Tree>, id: u32, opts: &ScanOptions, ctl: &ScanContro
     {
         let mut t = tree.write();
         t.clear_children(id);
-        t.set_own(id, platform::alloc_size(&meta), meta.len(), platform::mtime(&meta));
+        t.set_own(id, &entry_from_meta(String::new(), &meta));
         let prefix = path.to_string_lossy().into_owned();
         let prefix_dir = format!("{}/", prefix.trim_end_matches('/'));
         t.skipped.retain(|s| s.path != prefix && !s.path.starts_with(&prefix_dir));

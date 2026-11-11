@@ -57,6 +57,21 @@ pub fn mtime(meta: &Metadata) -> i64 {
     meta.modified().map(unix_secs).unwrap_or(0)
 }
 
+/// Clamps Unix seconds to the `u32` the tree stores for access and creation times (0 = unknown).
+pub fn clamp_secs(secs: i64) -> u32 {
+    secs.clamp(0, u32::MAX as i64) as u32
+}
+
+/// Last access time as a Unix timestamp (s); 0 when the system does not report it.
+pub fn atime(meta: &Metadata) -> u32 {
+    meta.accessed().map(unix_secs).map(clamp_secs).unwrap_or(0)
+}
+
+/// Creation (birth) time as a Unix timestamp (s); 0 when the file system does not record it.
+pub fn created(meta: &Metadata) -> u32 {
+    meta.created().map(unix_secs).map(clamp_secs).unwrap_or(0)
+}
+
 /// `st_flags` bit of an iCloud placeholder: the content is not on disk.
 #[cfg(target_os = "macos")]
 pub const SF_DATALESS: u32 = 0x4000_0000;
