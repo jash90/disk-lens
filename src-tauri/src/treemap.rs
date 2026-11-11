@@ -291,4 +291,29 @@ mod tests {
         assert_eq!(age_bucket(0, 400 * 86_400), 4);
         assert_eq!(age_bucket(0, 5000 * 86_400), 5);
     }
+
+    fn layout_of(max_tiles: usize) -> Vec<Tile> {
+        let t = crate::model::testutil::sample_tree();
+        let v = View::new(&t, crate::model::SizeMode::Alloc, None);
+        let opts = Options { width: 1000.0, height: 1000.0, min_area: 1.0, max_tiles, padding: 1.0, now: 0 };
+        layout(&v, crate::model::ROOT, &opts)
+    }
+
+    #[test]
+    fn layout_emits_one_tile_per_sized_node() {
+        let tiles = layout_of(1000);
+        assert_eq!(tiles.len(), 6);
+        assert!(tiles.iter().all(|t| t.kind != KIND_REST));
+        assert_eq!(tiles.iter().filter(|t| t.kind == KIND_DIR).count(), 2);
+        assert!(tiles.iter().all(|t| t.rect.x >= 0.0 && t.rect.x + t.rect.w <= 1000.0 + 1e-6));
+    }
+
+    #[test]
+    fn layout_folds_the_overflow_into_a_rest_tile() {
+        // Budget 2: the largest folder keeps its tile, its siblings fold into "rest", and the
+        // folder's own content (queued before the budget ran out) folds into a second "rest".
+        let tiles = layout_of(2);
+        assert_eq!(tiles.len(), 3);
+        assert_eq!(tiles.iter().filter(|t| t.kind == KIND_REST).count(), 2);
+    }
 }

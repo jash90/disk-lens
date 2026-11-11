@@ -400,13 +400,40 @@ pub fn extension_of(name: &str) -> String {
     }
 }
 
+/// Builders shared by the unit tests of several modules.
 #[cfg(test)]
-mod tests {
+pub(crate) mod testutil {
     use super::*;
 
-    fn entry(name: &str, kind: Kind, alloc: u64) -> NewEntry {
-        NewEntry { name: name.into(), kind, flags: 0, cat: 0, alloc, logical: alloc, mtime: 0 }
+    pub fn entry(name: &str, kind: Kind, size: u64) -> NewEntry {
+        NewEntry { name: name.into(), kind, flags: 0, cat: 0, alloc: size, logical: size, mtime: 0 }
     }
+
+    pub fn entry_at(name: &str, kind: Kind, size: u64, mtime: i64) -> NewEntry {
+        NewEntry { mtime, ..entry(name, kind, size) }
+    }
+
+    /// `/r` with `node_modules/big.js` (5000), `a.mp4` (1000), `src/main.rs` (10), `src/clip.MP4` (300).
+    pub fn sample_tree() -> Tree {
+        let mut t = Tree::new("/r".into(), entry("", Kind::Dir, 0), 0);
+        let ids = t.add_children(
+            ROOT,
+            vec![
+                entry_at("node_modules", Kind::Dir, 0, 300),
+                entry_at("a.mp4", Kind::File, 1000, 100),
+                entry_at("src", Kind::Dir, 0, 200),
+            ],
+        );
+        t.add_children(ids[0], vec![entry("big.js", Kind::File, 5000)]);
+        t.add_children(ids[2], vec![entry("main.rs", Kind::File, 10), entry("clip.MP4", Kind::File, 300)]);
+        t
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::testutil::entry;
+    use super::*;
 
     #[test]
     fn totals_propagate_and_detach() {

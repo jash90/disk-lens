@@ -377,23 +377,16 @@ pub fn crumbs(tree: &Tree, id: u32) -> Vec<Crumb> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{NewEntry, ROOT};
+    use crate::model::testutil::sample_tree;
+    use crate::model::ROOT;
 
-    fn e(name: &str, kind: Kind, size: u64) -> NewEntry {
-        NewEntry { name: name.into(), kind, flags: 0, cat: 0, alloc: size, logical: size, mtime: 0 }
-    }
-
-    fn sample() -> Tree {
-        let mut t = Tree::new("/r".into(), e("", Kind::Dir, 0), 0);
-        let ids = t.add_children(ROOT, vec![e("node_modules", Kind::Dir, 0), e("a.mp4", Kind::File, 1000), e("src", Kind::Dir, 0)]);
-        t.add_children(ids[0], vec![e("big.js", Kind::File, 5000)]);
-        t.add_children(ids[2], vec![e("main.rs", Kind::File, 10), e("clip.MP4", Kind::File, 300)]);
-        t
+    fn names(v: &View, sort: SortKey, desc: bool) -> Vec<String> {
+        children(v, ROOT, sort, desc, 0, 10).rows.into_iter().map(|r| r.name).collect()
     }
 
     #[test]
     fn filter_excludes_and_extensions() {
-        let t = sample();
+        let t = sample_tree();
         let f = Filter { excludes: vec!["node_modules".into()], ..Default::default() };
         let s = compute_filtered(&t, &f, SizeMode::Alloc);
         assert_eq!(s.size[0], 1310);
@@ -404,16 +397,69 @@ mod tests {
         assert_eq!(s.size[0], 1300);
         let v = View::new(&t, SizeMode::Alloc, Some(s));
         let page = children(&v, ROOT, SortKey::Size, true, 0, 10);
-        assert_eq!(page.total, 2, "node_modules nie ma plików mp4, więc znika");
+        assert_eq!(page.total, 2, "node_modules has no mp4 files, so it disappears");
         assert_eq!(page.rows[0].name, "a.mp4");
     }
 
     #[test]
+    fn filter_min_size_and_name_query() {
+        let t = sample_tree();
+        let s = compute_filtered(&t, &Filter { min_size: 500, ..Default::default() }, SizeMode::Alloc);
+        assert_eq!((s.size[0], s.files[0]), (6000, 2));
+        let s = compute_filtered(&t, &Filter { query: " MAIN ".into(), ..Default::default() }, SizeMode::Alloc);
+        assert_eq!((s.size[0], s.files[0]), (10, 1));
+    }
+
+    #[test]
+    fn children_sort_by_every_key() {
+        let t = sample_tree();
+        let v = View::new(&t, SizeMode::Alloc, None);
+        assert_eq!(names(&v, SortKey::Name, false), ["a.mp4", "node_modules", "src"]);
+        assert_eq!(names(&v, SortKey::Size, true), ["node_modules", "a.mp4", "src"]);
+        assert_eq!(names(&v, SortKey::Files, true), ["src", "node_modules", "a.mp4"]);
+        assert_eq!(names(&v, SortKey::Mtime, false), ["a.mp4", "src", "node_modules"]);
+        // No folder has subfolders: ties keep the arena order (last inserted first).
+        assert_eq!(names(&v, SortKey::Dirs, false), ["src", "a.mp4", "node_modules"]);
+    }
+
+    #[test]
+    fn children_are_paged() {
+        let t = sample_tree();
+        let v = View::new(&t, SizeMode::Alloc, None);
+        let page = children(&v, ROOT, SortKey::Size, true, 1, 1);
+        assert_eq!((page.total, page.parent_size, page.rows.len()), (3, 6310, 1));
+        assert_eq!(page.rows[0].name, "a.mp4");
+        assert!((page.rows[0].pct - 1000.0 * 100.0 / 6310.0).abs() < 1e-9);
+    }
+
+    #[test]
     fn top_files_sorted() {
-        let t = sample();
+        let t = sample_tree();
         let v = View::new(&t, SizeMode::Alloc, None);
         let top = top_files(&v, ROOT, 2);
         assert_eq!(top.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), vec!["big.js", "a.mp4"]);
         assert_eq!(top[0].path, "node_modules/big.js");
+    }
+
+    #[test]
+    fn type_breakdown_groups_by_extension() {
+        let t = sample_tree();
+        let v = View::new(&t, SizeMode::Alloc, None);
+        let b = type_breakdown(&v, ROOT, 2);
+        assert_eq!(b.categories.len(), 1);
+        assert_eq!((b.categories[0].size, b.categories[0].files), (6310, 4));
+        let exts: Vec<_> = b.extensions.iter().map(|e| (e.ext.as_str(), e.size, e.files)).collect();
+        assert_eq!(exts, [("js", 5000, 1), ("mp4", 1300, 2)]);
+    }
+
+    #[test]
+    fn node_info_reports_path_and_share() {
+        let t = sample_tree();
+        let v = View::new(&t, SizeMode::Alloc, None);
+        let src = t.children(ROOT).find(|&c| t.name(c) == "src").unwrap();
+        let info = node_info(&v, src);
+        assert_eq!((info.path.as_str(), info.size, info.files), ("/r/src", 310, 2));
+        assert!((info.pct_of_root - 310.0 * 100.0 / 6310.0).abs() < 1e-9);
+        assert_eq!(crumbs(&t, src).iter().map(|c| c.id).collect::<Vec<_>>(), [ROOT, src]);
     }
 }

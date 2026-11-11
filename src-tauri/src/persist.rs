@@ -224,17 +224,40 @@ fn diff_dir(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Kind, NewEntry};
-
-    fn e(name: &str, kind: Kind, size: u64) -> NewEntry {
-        NewEntry { name: name.into(), kind, flags: 0, cat: 0, alloc: size, logical: size, mtime: 1_700_000_000 }
-    }
+    use crate::model::testutil::{entry as e, sample_tree};
+    use crate::model::Kind;
+    use crate::query::{children, SortKey};
 
     fn tree(sizes: &[(&str, u64)]) -> Tree {
         let mut t = Tree::new("/r".into(), e("", Kind::Dir, 0), 0);
         let d = t.add_children(ROOT, vec![e("d", Kind::Dir, 0)])[0];
         t.add_children(d, sizes.iter().map(|(n, s)| e(n, Kind::File, *s)).collect());
         t
+    }
+
+    #[test]
+    fn export_writes_csv_and_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let t = sample_tree();
+        let v = View::new(&t, SizeMode::Alloc, None);
+        let rows = children(&v, ROOT, SortKey::Size, true, 0, usize::MAX).rows;
+
+        let csv_path = dir.path().join("out.csv");
+        assert_eq!(export(&v, ROOT, &rows, "csv", &csv_path).unwrap(), 3);
+        let csv = fs::read_to_string(&csv_path).unwrap();
+        let mut lines = csv.lines();
+        assert_eq!(lines.next().unwrap(), "name,path,kind,size,allocated,logical,files,dirs,modified,percent");
+        assert_eq!(lines.next().unwrap(), "node_modules,/r/node_modules,dir,5000,5000,5000,1,0,1970-01-01T00:05:00Z,79.24");
+
+        let json_path = dir.path().join("out.json");
+        export(&v, ROOT, &rows, "json", &json_path).unwrap();
+        let doc: serde_json::Value = serde_json::from_str(&fs::read_to_string(&json_path).unwrap()).unwrap();
+        assert_eq!(doc["root"], "/r");
+        assert_eq!(doc["sizeMode"], "alloc");
+        assert_eq!(doc["total"], 6310);
+        assert_eq!(doc["items"][1]["name"], "a.mp4");
+
+        assert!(export(&v, ROOT, &rows, "xml", &json_path).is_err());
     }
 
     #[test]
