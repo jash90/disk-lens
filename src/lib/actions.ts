@@ -24,11 +24,21 @@ export async function refreshInfo() {
   return info;
 }
 
-export async function startScan(path: string, crossVolumes: boolean) {
+/** Starts a scan. A folder scanned before is only checked for changes, unless `full` is set. */
+export async function startScan(path: string, crossVolumes: boolean, full = false) {
   await guarded(null, async () => {
-    await api.scanStart(path, crossVolumes);
+    await api.scanStart(path, crossVolumes, full);
     const info = await api.treeInfo();
     st().resetForScan(info, true);
+  });
+}
+
+/** Shows the last kept scan, if any, when the app starts with nothing else to show. */
+export async function restoreLastScan() {
+  await guarded(null, async () => {
+    if ((await api.restoreLastScan()) === null) return;
+    const info = await api.treeInfo();
+    st().resetForScan(info, info?.scanning ?? false);
   });
 }
 

@@ -39,6 +39,9 @@ const INSTALLER_EXTS = ["dmg", "pkg", "zip", "iso", "exe", "msi"];
 const ACCESS_CAVEAT =
   "Data ostatniego dostępu bywa niedokładna: część systemów jej nie aktualizuje, a kopie zapasowe i indeksowanie ją zmieniają.";
 
+const REFRESH_CAVEAT =
+  "Po odświeżeniu daty dostępu są aktualne tylko w folderach, w których coś się zmieniło; pozostałe pochodzą z pełnego skanu";
+
 const UNKNOWN_AGE_COLOR = "var(--map-rest)";
 
 function AgeStrip({ data }: { data: AgeHistogram }) {
@@ -81,6 +84,8 @@ export function StaleFiles() {
   const setFilter = useStore((s) => s.setFilter);
   const setTrashTarget = useStore((s) => s.setTrashTarget);
   const view = useViewArgs();
+  const info = useStore((s) => s.info);
+  const refreshCaveat = info && info.refreshedAt > 0 ? ` ${REFRESH_CAVEAT} (${formatDate(info.scannedAt)}).` : "";
 
   const [list, setList] = useState<StaleListKind>("files");
   const [days, setDays] = useState(365);
@@ -209,7 +214,7 @@ export function StaleFiles() {
           </select>
         </div>
         <div className="stale-controls">
-          <label className="check" title={ACCESS_CAVEAT}>
+          <label className="check" title={ACCESS_CAVEAT + refreshCaveat}>
             <input type="checkbox" checked={useAccess} onChange={(e) => setUseAccess(e.target.checked)} />
             uwzględnij ostatni dostęp
           </label>
@@ -239,7 +244,7 @@ export function StaleFiles() {
         </div>
         <p className="muted stale-hint">
           {current.hint}
-          {useAccess ? ` ${ACCESS_CAVEAT}` : ""}
+          {useAccess ? ` ${ACCESS_CAVEAT}${refreshCaveat}` : ""}
         </p>
       </div>
 

@@ -58,7 +58,7 @@ function CoverageSection({ info, vol, cov }: { info: TreeInfo; vol: VolumeInfo; 
   const setTab = useStore((s) => s.setTab);
   const whole = isWholeVolume(info, vol);
   const found = Math.min(cov.scanned, cov.used);
-  const stale = !scanning && Date.now() / 1000 - info.scannedAt > STALE_AFTER;
+  const stale = !scanning && Date.now() / 1000 - Math.max(info.scannedAt, info.refreshedAt) > STALE_AFTER;
   const apfs = vol.fsType.toLowerCase() === "apfs";
 
   return (
@@ -122,7 +122,7 @@ function CoverageSection({ info, vol, cov }: { info: TreeInfo; vol: VolumeInfo; 
       ) : null}
       {stale ? (
         <p className="muted">
-          Skan z {formatDate(info.scannedAt)}, a dane dysku są bieżące – od tamtej pory zawartość mogła się zmienić.
+          Skan z {formatDate(Math.max(info.scannedAt, info.refreshedAt))}, a dane dysku są bieżące – od tamtej pory zawartość mogła się zmienić.
         </p>
       ) : null}
     </>

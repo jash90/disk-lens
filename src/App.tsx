@@ -8,7 +8,7 @@ import { ConfirmTrashDialog } from "./components/TrashDialog";
 import { Tabs } from "./components/Tabs";
 import { Toolbar } from "./components/Toolbar";
 import { UpdateDialog, useUpdateEvents } from "./components/Update";
-import { chooseAndScan, refreshInfo, rescan, startScan } from "./lib/actions";
+import { chooseAndScan, refreshInfo, rescan, restoreLastScan, startScan } from "./lib/actions";
 import { useStore } from "./store";
 
 function isTyping(e: KeyboardEvent): boolean {
@@ -26,8 +26,10 @@ function useProgressEvents() {
       refreshInfo().then(() => useStore.getState().bump());
     });
     refreshInfo().then(async (info) => {
-      const path = info ? null : await api.launchPath();
+      if (info) return;
+      const path = await api.launchPath();
       if (path) startScan(path, false);
+      else restoreLastScan();
     });
     return () => {
       un.then((f) => f());

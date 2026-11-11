@@ -9,7 +9,7 @@ import {
   saveScan,
   startScan,
 } from "../lib/actions";
-import { filesLabel, filesNoun, foldersLabel, formatBytes, formatCount, formatDuration, middleEllipsis } from "../lib/format";
+import { filesLabel, filesNoun, foldersLabel, formatBytes, formatCount, formatDate, formatDuration, middleEllipsis } from "../lib/format";
 import { useStore } from "../store";
 import { shortcut } from "../lib/platform";
 
@@ -71,6 +71,16 @@ export function Toolbar() {
             </>
           )}
         </Menu>
+        {info ? (
+          <button
+            className="btn"
+            disabled={scanning}
+            onClick={() => startScan(info.rootPath, cross)}
+            title="Sprawdza, co zmieniło się w tym folderze od ostatniego skanu. Gdy system nie ma już historii zmian, skanuje wszystko od nowa."
+          >
+            Odśwież
+          </button>
+        ) : null}
         <label className="check" title="Wchodź do punktów montowania innych dysków i obrazów">
           <input type="checkbox" checked={cross} onChange={(e) => setCross(e.target.checked)} />
           Inne wolumeny
@@ -78,7 +88,15 @@ export function Toolbar() {
       </div>
 
       <div className="tb-progress">
-        {scanning && progress ? (
+        {scanning && progress?.refresh ? (
+          <>
+            <span className="spinner" aria-hidden />
+            <span className="stat">Sprawdzam zmiany od ostatniego skanu… {formatDuration(progress.elapsedMs)}</span>
+            <button className="btn danger" onClick={cancelScan}>
+              Anuluj
+            </button>
+          </>
+        ) : scanning && progress ? (
           <>
             <span className="spinner" aria-hidden />
             <span className="stat">
@@ -102,10 +120,18 @@ export function Toolbar() {
           </>
         ) : progress?.cancelled ? (
           <span className="stat warn-text">Skan anulowany – wyniki są częściowe.</span>
+        ) : progress?.done && progress.refresh ? (
+          <span className="stat" title="Odczytano tylko foldery, które zmieniły się od ostatniego skanu. Pełny skan: menu Plik.">
+            Odświeżono w {formatDuration(progress.elapsedMs)}: {foldersLabel(progress.checked)} ze zmianami
+          </span>
         ) : progress?.done ? (
           <span className="stat">
             Gotowe: {filesLabel(progress.files)}, {foldersLabel(progress.dirs)} w{" "}
             {formatDuration(progress.elapsedMs)}
+          </span>
+        ) : info?.restored ? (
+          <span className="stat warn-text" title={info.rootPath}>
+            Ostatni skan z {formatDate(Math.max(info.scannedAt, info.refreshedAt))} – kliknij „Odśwież”, aby sprawdzić zmiany.
           </span>
         ) : info ? (
           <span className="stat">{info.rootPath}</span>
@@ -148,6 +174,14 @@ export function Toolbar() {
               </button>
               <button className="menu-item" onClick={() => (close(), loadScan())}>
                 Wczytaj skan…
+              </button>
+              <button
+                className="menu-item"
+                disabled={!info || scanning}
+                onClick={() => (close(), info && startScan(info.rootPath, cross, true))}
+                title="Czyta cały folder od nowa, bez korzystania z ostatniego skanu."
+              >
+                Pełny skan od nowa
               </button>
               <div className="menu-sep" />
               <button className="menu-item" disabled={!info} onClick={() => (close(), exportView("csv"))}>

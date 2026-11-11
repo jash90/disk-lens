@@ -88,6 +88,10 @@ export interface Progress {
   elapsedMs: number;
   done: boolean;
   cancelled: boolean;
+  /** The run only checks what changed since the last scan. */
+  refresh: boolean;
+  /** Folders a finished refresh looked at. */
+  checked: number;
 }
 
 export interface TreeInfo {
@@ -100,6 +104,10 @@ export interface TreeInfo {
   dirs: number;
   skipped: number;
   scannedAt: number;
+  /** When the tree was last brought up to date from the system's change log; 0 after a full scan. */
+  refreshedAt: number;
+  /** Shown from the app's cache, not checked against the disk in this session. */
+  restored: boolean;
   volume: VolumeInfo | null;
   coverage: Coverage | null;
 }
@@ -296,7 +304,8 @@ function decodeTiles(buf: ArrayBuffer): Tile[] {
 export const api = {
   launchPath: () => invoke<string | null>("launch_path"),
   listVolumes: () => invoke<Volume[]>("list_volumes"),
-  scanStart: (path: string, crossVolumes: boolean) => invoke<number>("scan_start", { path, crossVolumes }),
+  scanStart: (path: string, crossVolumes: boolean, full = false) => invoke<number>("scan_start", { path, crossVolumes, full }),
+  restoreLastScan: () => invoke<number | null>("restore_last_scan"),
   scanCancel: () => invoke<void>("scan_cancel"),
   treeInfo: () => invoke<TreeInfo | null>("tree_info"),
   getNode: (id: number, view: ViewArgs) => invoke<NodeInfo>("get_node", { id, view }),
