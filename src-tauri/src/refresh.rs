@@ -30,7 +30,15 @@ pub struct RefreshStats {
     pub listed: usize,
     /// Folders scanned again in depth.
     pub rescanned: usize,
+    /// Recently modified files looked at one by one (see [`recheck_recent_files`]).
+    pub rechecked: usize,
 }
+
+/// Files modified within this time before the tree was last brought up to date are checked on
+/// every refresh, whether or not the event log mentions their folder.
+const RECENT_SECS: i64 = 2 * 24 * 3600;
+/// At most this many of them, the most recently modified first.
+const MAX_RECENT: usize = 250_000;
 
 /// Turns changed paths into tree nodes to refresh. A path that is not in the tree yet stands
 /// for its nearest folder that is: listing that one finds the new subtree.
@@ -81,10 +89,60 @@ pub fn refresh(tree: &RwLock<Tree>, changes: &[Change], opts: &ScanOptions, ctl:
             }
         });
     }
+    let rechecked = recheck_recent_files(&ctx);
     let mut t = tree.write();
     fix_hard_links(&mut t);
     t.state.refreshed_at = platform::now_secs();
-    RefreshStats { listed: listed.into_inner(), rescanned: rescanned.into_inner() }
+    RefreshStats { listed: listed.into_inner(), rescanned: rescanned.into_inner(), rechecked }
+}
+
+/// The event log reports a written file only when it is closed. A file that a running program
+/// keeps open (a database journal, a log, a virtual disk) grows or shrinks without any event,
+/// so files that were modified shortly before the tree's last update are looked at directly.
+/// A file that was idle for longer and is being written to again is caught when it is closed.
+fn recheck_recent_files(ctx: &Ctx<'_>) -> usize {
+    use rayon::prelude::*;
+    // Nothing writes to the tree at this point, so the workers can share it for reading.
+    let t = ctx.tree.read();
+    let cutoff = t.scanned_at.max(t.state.refreshed_at) - RECENT_SECS;
+    let (checked, changed): (usize, Vec<(u32, NewEntry)>) = ctx.pool().install(|| {
+        let mut recent: Vec<(i64, u32)> = (1..t.len() as u32)
+            .into_par_iter()
+            .filter(|&id| {
+                let n = t.node(id);
+                n.kind == Kind::File && n.mtime >= cutoff && t.is_attached(id)
+            })
+            .map(|id| (t.node(id).mtime, id))
+            .collect();
+        // Each check costs a system call; after a big build or install the newest files go first.
+        if recent.len() > MAX_RECENT {
+            let at = recent.len() - MAX_RECENT;
+            recent.select_nth_unstable(at);
+            recent.drain(..at);
+        }
+        let found: Vec<Option<(u32, NewEntry)>> = recent
+            .into_par_iter()
+            .filter(|_| !ctx.ctl.cancelled())
+            .map(|(_, id)| {
+                let meta = fs::symlink_metadata(t.path(id)).ok().filter(|m| m.is_file())?;
+                let own = entry_from_meta(String::new(), &meta);
+                let n = t.node(id);
+                // Hard links that count as 0 keep doing so; only real changes are written back.
+                let same_size = n.flags & flags::HARDLINK_DUP != 0 || (n.alloc, n.logical) == (own.alloc, own.logical);
+                (!same_size || (n.mtime, n.atime) != (own.mtime, own.atime)).then_some((id, own))
+            })
+            .collect();
+        (found.len(), found.into_iter().flatten().collect())
+    });
+    drop(t);
+    let mut t = ctx.tree.write();
+    for (id, own) in changed {
+        // Still the same item: the listing of a changed folder may have replaced it meanwhile.
+        if t.is_attached(id) && t.node(id).kind == Kind::File {
+            t.update_own(id, &own, false);
+        }
+    }
+    checked
 }
 
 /// Drops the "skipped" records of `path` and of everything below it.

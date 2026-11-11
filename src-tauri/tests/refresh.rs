@@ -100,7 +100,7 @@ fn nothing_changed_changes_nothing() {
     let f = Fixture::new(base);
     let before = snapshot(&f.tree.read());
     let stats = f.refresh(&["a", "b/sub", ""]);
-    assert_eq!(stats, RefreshStats { listed: 3, rescanned: 0 });
+    assert_eq!((stats.listed, stats.rescanned), (3, 0));
     assert_eq!(snapshot(&f.tree.read()), before);
     f.assert_matches_fresh_scan();
 }
@@ -123,6 +123,26 @@ fn file_grown_in_place_without_touching_its_folder() {
     fs::File::open(f.root.join("b/sub")).unwrap().set_modified(folder_mtime).unwrap();
     f.refresh(&["b/sub"]);
     f.assert_matches_fresh_scan();
+}
+
+#[test]
+fn recently_modified_file_is_checked_without_any_reported_change() {
+    // A program that keeps a file open writes to it without the event log saying so.
+    let f = Fixture::new(base);
+    write(&f.root.join("b/sub/five.txt"), 900_000);
+    let stats = f.refresh(&[]);
+    assert_eq!((stats.listed, stats.rescanned, stats.rechecked), (0, 0, 6));
+    f.assert_matches_fresh_scan();
+}
+
+#[test]
+fn file_that_was_old_at_scan_time_is_left_to_the_event_log() {
+    let f = Fixture::new(|root| {
+        base(root);
+        let old = SystemTime::now() - Duration::from_secs(30 * 24 * 3600);
+        fs::File::options().write(true).open(root.join("top.txt")).unwrap().set_modified(old).unwrap();
+    });
+    assert_eq!(f.refresh(&[]).rechecked, 5);
 }
 
 #[test]
@@ -171,7 +191,7 @@ fn deep_change_rescans_the_whole_folder() {
     write(&f.root.join("a/deep/more/files.bin"), 9999);
     fs::remove_file(f.root.join("a/one.txt")).unwrap();
     let stats = f.refresh_with(&["a", "a/deep"], true);
-    assert_eq!(stats, RefreshStats { listed: 0, rescanned: 1 }, "the folder below is covered by the one above");
+    assert_eq!((stats.listed, stats.rescanned), (0, 1), "the folder below is covered by the one above");
     f.assert_matches_fresh_scan();
 }
 
