@@ -115,5 +115,9 @@ pub struct ViewArgs {
 }
 
 pub(super) fn check_id(tree: &Tree, id: u32) -> Res<()> {
-    tree.get(id).map(|_| ()).ok_or_else(|| "Element nie istnieje (mógł zostać usunięty lub przeskanowany ponownie).".into())
+    if tree.is_attached(id) {
+        Ok(())
+    } else {
+        Err("Element nie istnieje (mógł zostać usunięty lub przeskanowany ponownie).".into())
+    }
 }

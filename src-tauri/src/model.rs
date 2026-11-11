@@ -305,6 +305,22 @@ impl Tree {
         false
     }
 
+    /// Whether `id` is a node that is still part of the tree: neither it nor any folder above
+    /// it was removed. (`detach` flags only the top of the removed subtree.)
+    pub fn is_attached(&self, id: u32) -> bool {
+        if (id as usize) >= self.nodes.len() {
+            return false;
+        }
+        let mut cur = id;
+        while cur != NONE {
+            if !self.node(cur).is_live() {
+                return false;
+            }
+            cur = self.node(cur).parent;
+        }
+        true
+    }
+
     fn subtree_totals(&self, id: u32) -> Totals {
         let n = self.node(id);
         let is_dir = n.kind.is_dir();
@@ -319,7 +335,8 @@ impl Tree {
     /// Detaches a node (e.g. after moving it to the Trash) and subtracts its size from the ancestors.
     pub fn detach(&mut self, id: u32) {
         let parent = self.node(id).parent;
-        if parent == NONE || !self.node(id).is_live() {
+        // A node under an already removed folder was subtracted together with that folder.
+        if parent == NONE || !self.is_attached(id) {
             return;
         }
         let t = self.subtree_totals(id);
@@ -451,6 +468,17 @@ pub(crate) mod testutil {
 mod tests {
     use super::testutil::entry;
     use super::*;
+
+    #[test]
+    fn detaching_below_a_removed_folder_subtracts_nothing() {
+        let mut t = Tree::new("/x".into(), entry("", Kind::Dir, 0), 0);
+        let a = t.add_children(ROOT, vec![entry("a", Kind::Dir, 0), entry("keep", Kind::File, 1)])[0];
+        let g = t.add_children(a, vec![entry("g", Kind::File, 50)])[0];
+        t.detach(a);
+        assert!(!t.is_attached(a) && !t.is_attached(g) && t.is_attached(ROOT));
+        t.detach(g);
+        assert_eq!((t.node(ROOT).alloc, t.node(ROOT).files), (1, 1));
+    }
 
     #[test]
     fn totals_propagate_and_detach() {
