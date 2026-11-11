@@ -1,15 +1,16 @@
-//! Akcje na plikach: blokady ścieżek systemowych, Kosz, terminal – osobno dla każdego systemu.
+//! Actions on files: protection of system paths, Trash, terminal; separately for each system.
 
+use crate::model::{Tree, ROOT};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Reguły ochrony ścieżek przed przeniesieniem do Kosza.
+/// Rules protecting paths from being moved to the Trash.
 pub struct Rules {
-    /// Chronione razem z zawartością.
+    /// Protected together with their content.
     pub prefixes: &'static [&'static str],
-    /// Wyjątki od `prefixes` – tu użytkownik może sprzątać.
+    /// Exceptions to `prefixes`: the user may clean up here.
     pub allowed: &'static [&'static str],
-    /// Chronione tylko jako całość (zawartość wolno usuwać).
+    /// Protected only as a whole (the content may be removed).
     pub exact: &'static [&'static str],
     pub case_insensitive: bool,
     pub system_name: &'static str,
@@ -58,7 +59,7 @@ pub const RULES: &Rules = &WINDOWS;
 #[cfg(not(any(target_os = "macos", windows)))]
 pub const RULES: &Rules = &LINUX;
 
-/// Ścieżka jako napis z `/`, bez końcowego separatora, małymi literami gdy system ich nie rozróżnia.
+/// The path as a string with `/`, without a trailing separator, lower-cased when the system ignores case.
 fn norm(path: &Path, rules: &Rules) -> String {
     let s = path.to_string_lossy().replace('\\', "/");
     let s = if s.len() > 1 { s.trim_end_matches('/').to_string() } else { s };
@@ -80,7 +81,7 @@ pub fn protection_reason(path: &Path, scan_root: &Path, home: Option<&Path>, rul
     if p == norm(scan_root, rules) {
         return Some("To korzeń bieżącego skanu.".into());
     }
-    // Korzeń systemu plików lub dysku: „/”, „C:/”.
+    // File system or drive root: "/", "C:/".
     if p == "/" || (p.len() == 2 && p.ends_with(':')) {
         return Some("To korzeń dysku.".into());
     }
@@ -103,8 +104,81 @@ pub fn protection_reason(path: &Path, scan_root: &Path, home: Option<&Path>, rul
     None
 }
 
-/// Przenosi do Kosza. Na macOS przez `NSFileManager.trashItemAtURL` – bez AppleScriptu,
-/// więc bez pytania o zgodę na sterowanie Finderem (kosztem braku „Odłóż z powrotem”).
+/// The protection rules resolved to nodes of one tree, so that a walk over the tree can tell
+/// protected items without building a path for each of them. Agrees with [`protection_reason`].
+#[derive(Default, Debug)]
+pub struct Protected {
+    /// Whether the children of the scan root lie in a protected zone.
+    root_zone: bool,
+    /// Nodes protected together with their content.
+    blocked: Vec<u32>,
+    /// Nodes whose content is free again (the node itself stays protected).
+    allowed: Vec<u32>,
+    /// Nodes protected only as a whole.
+    exact: Vec<u32>,
+}
+
+impl Protected {
+    pub fn resolve(tree: &Tree, home: Option<&Path>, rules: &Rules) -> Self {
+        let root = norm(&tree.root_path, rules);
+        // All nodes whose path is `target`: several when names differ only by case on a
+        // case-sensitive volume, none when the path is outside the scan.
+        let nodes_of = |target: &str| -> Vec<u32> {
+            let rest = if root == "/" { target.strip_prefix('/') } else { target.strip_prefix(root.as_str()).and_then(|r| r.strip_prefix('/')) };
+            let Some(rest) = rest else { return Vec::new() };
+            rest.split('/').filter(|c| !c.is_empty()).fold(vec![ROOT], |ids, comp| {
+                let matches = |c: &u32| {
+                    let name = tree.name(*c);
+                    if rules.case_insensitive {
+                        name.to_lowercase() == comp
+                    } else {
+                        name == comp
+                    }
+                };
+                ids.iter().flat_map(|&id| tree.children(id).filter(matches)).collect()
+            })
+        };
+        let pn = |x: &str| norm(Path::new(x), rules);
+        let all = |list: &[&str]| -> Vec<u32> { list.iter().flat_map(|x| nodes_of(&pn(x))).collect() };
+        let mut exact = all(rules.exact);
+        if let Some(h) = home.map(|h| norm(h, rules)) {
+            exact.extend(nodes_of(&h));
+            if let Some((parent, _)) = h.rsplit_once('/') {
+                exact.extend(nodes_of(parent));
+            }
+        }
+        Protected {
+            root_zone: rules.prefixes.iter().any(|x| under(&root, &pn(x))) && !rules.allowed.iter().any(|a| under(&root, &pn(a))),
+            blocked: all(rules.prefixes),
+            allowed: all(rules.allowed),
+            exact,
+        }
+    }
+
+    /// Whether the children of `id` lie in a protected zone, given the zone `id` itself lies in.
+    pub fn zone_below(&self, id: u32, zone: bool) -> bool {
+        if self.blocked.contains(&id) {
+            true
+        } else if self.allowed.contains(&id) {
+            false
+        } else {
+            zone
+        }
+    }
+
+    /// The zone the children of `id` lie in, found by walking down from the scan root.
+    pub fn zone_of_children(&self, tree: &Tree, id: u32) -> bool {
+        tree.ancestors(id).into_iter().skip(1).fold(self.root_zone, |zone, a| self.zone_below(a, zone))
+    }
+
+    /// Whether `id` itself must not be trashed, given the zone its parent's children lie in.
+    pub fn is_protected(&self, id: u32, zone: bool) -> bool {
+        id == ROOT || zone || self.blocked.contains(&id) || self.exact.contains(&id)
+    }
+}
+
+/// Moves to the Trash. On macOS through `NSFileManager.trashItemAtURL`: no AppleScript, so no
+/// prompt for permission to control Finder (at the cost of losing "Put Back").
 pub fn move_to_trash(path: &Path) -> Result<(), String> {
     #[allow(unused_mut)]
     let mut ctx = trash::TrashContext::default();
@@ -128,7 +202,7 @@ pub fn open_terminal(dir: &Path) -> Result<(), String> {
     }
     #[cfg(windows)]
     {
-        // Windows Terminal, a gdy go nie ma – klasyczny cmd w nowym oknie.
+        // Windows Terminal, and when it is missing, classic cmd in a new window.
         if Command::new("wt.exe").arg("-d").arg(dir).spawn().is_ok() {
             return Ok(());
         }
@@ -177,12 +251,12 @@ mod tests {
         assert!(p("/usr/local/lib/x").is_none());
         assert!(p("/Users/me").is_some());
         assert!(p("/Users").is_some());
-        assert!(p("/Users/me/Dokumenty").is_some(), "korzeń skanu");
+        assert!(p("/Users/me/Dokumenty").is_some(), "scan root");
         assert!(p("/Users/me/Dokumenty/old").is_none());
         assert!(p("/Applications/Foo.app").is_none());
         assert!(p("/private/var/db/x").is_some());
         assert!(p("/private/tmp/x").is_none());
-        assert!(p("/usrx/file").is_none(), "prefiks musi kończyć się na granicy komponentu");
+        assert!(p("/usrx/file").is_none(), "a prefix has to end at a component boundary");
     }
 
     #[test]
@@ -208,11 +282,44 @@ mod tests {
         assert!(p(r"C:\").is_some());
         assert!(p(r"D:\").is_some());
         assert!(p(r"C:\Windows\System32").is_some());
-        assert!(p(r"c:\PROGRAM FILES\App").is_some(), "bez rozróżniania wielkości liter");
+        assert!(p(r"c:\PROGRAM FILES\App").is_some(), "case-insensitive");
         assert!(p(r"C:\Users").is_some());
         assert!(p(r"C:\Users\Me").is_some());
         assert!(p(r"C:\Users\Me\Downloads\x.zip").is_none());
-        assert!(p(r"d:\dane").is_some(), "korzeń skanu");
+        assert!(p(r"d:\dane").is_some(), "scan root");
         assert!(p(r"D:\Dane\stare").is_none());
+    }
+
+    /// Every node of a realistic tree gets the same verdict from the resolved rules as from the
+    /// path-based check.
+    #[test]
+    fn resolved_rules_agree_with_path_check() {
+        use crate::model::testutil::entry;
+        use crate::model::Kind;
+        for (root, rules, home) in [("/", &MACOS, "/Users/me"), ("/usr", &MACOS, "/Users/me"), ("/Users/me", &MACOS, "/Users/me"), ("/", &LINUX, "/home/me")] {
+            let mut t = Tree::new(root.into(), entry("", Kind::Dir, 0), 0);
+            let paths = [
+                "System/Library/x", "usr/local/bin/f", "usr/bin/f", "local/bin/f", "bin/f", "Users/me/Documents/f", "Users/other/f",
+                "private/tmp/f", "private/var/folders/x", "private/var/db/x", "Applications/Foo.app/c", "Library/Apple/x",
+                "Library/Caches/x", "opt/homebrew/bin/f", "home/me/data/f", "var/lib/docker/x", "var/log/old.log", "USR/share/f",
+            ];
+            for p in paths {
+                let mut id = ROOT;
+                for comp in p.split('/') {
+                    id = match t.children(id).find(|&c| t.name(c) == comp) {
+                        Some(c) => c,
+                        None => t.add_children(id, vec![entry(comp, Kind::Dir, 0)])[0],
+                    };
+                }
+            }
+            let prot = Protected::resolve(&t, Some(Path::new(home)), rules);
+            let mut stack = vec![(ROOT, false)];
+            while let Some((id, zone)) = stack.pop() {
+                let expected = protection_reason(&t.path(id), &t.root_path, Some(Path::new(home)), rules).is_some();
+                let zone = if id == ROOT { zone } else { prot.zone_of_children(&t, t.node(id).parent) };
+                assert_eq!(prot.is_protected(id, zone), expected, "{:?} under root {root}", t.path(id));
+                stack.extend(t.children(id).map(|c| (c, false)));
+            }
+        }
     }
 }
