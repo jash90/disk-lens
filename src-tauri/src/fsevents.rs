@@ -29,8 +29,9 @@ pub fn position(path: &Path) -> Option<Position> {
 }
 
 /// Folders under `root` whose content changed after `since`. `Err` says why the log cannot
-/// answer; nothing can be concluded from the tree then.
-pub fn changes_since(root: &Path, since: &Position, timeout: Duration) -> Result<Vec<Change>, String> {
+/// answer; nothing can be concluded from the tree then. `give_up` is asked several times a
+/// second whether to stop waiting.
+pub fn changes_since(root: &Path, since: &Position, timeout: Duration, give_up: &dyn Fn() -> bool) -> Result<Vec<Change>, String> {
     let now = position(root).ok_or("no event log for this volume")?;
     if since.event_id == 0 || since.uuid.is_empty() || now.uuid != since.uuid {
         return Err("the event log was reset since the last scan".into());
@@ -41,7 +42,7 @@ pub fn changes_since(root: &Path, since: &Position, timeout: Duration) -> Result
     if now.event_id - since.event_id > MAX_ID_DISTANCE {
         return Err("too much happened since the last scan".into());
     }
-    imp::changes_since(root, since.event_id, timeout)
+    imp::changes_since(root, since.event_id, timeout, give_up)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -52,7 +53,7 @@ mod imp {
         None
     }
 
-    pub fn changes_since(_: &Path, _: u64, _: Duration) -> Result<Vec<Change>, String> {
+    pub fn changes_since(_: &Path, _: u64, _: Duration, _: &dyn Fn() -> bool) -> Result<Vec<Change>, String> {
         Err("no event log on this system".into())
     }
 }
@@ -200,7 +201,7 @@ mod imp {
 
     extern "C" fn nothing(_: *mut c_void) {}
 
-    pub fn changes_since(root: &Path, since: u64, timeout: Duration) -> Result<Vec<Change>, String> {
+    pub fn changes_since(root: &Path, since: u64, timeout: Duration, give_up: &dyn Fn() -> bool) -> Result<Vec<Change>, String> {
         // The log speaks in resolved paths (/private/var for /var).
         let watched = std::fs::canonicalize(root).map_err(|e| e.to_string())?;
         let bytes = watched.as_os_str().as_bytes();
@@ -232,7 +233,11 @@ mod imp {
             let queue = dispatch_queue_create(c"disk-lens.fsevents".as_ptr(), std::ptr::null());
             FSEventStreamSetDispatchQueue(stream, queue);
             let finished = if FSEventStreamStart(stream) != 0 {
-                let finished = done_rx.recv_timeout(timeout).is_ok();
+                let deadline = std::time::Instant::now() + timeout;
+                let mut finished = false;
+                while !finished && std::time::Instant::now() < deadline && !give_up() {
+                    finished = done_rx.recv_timeout(Duration::from_millis(100)).is_ok();
+                }
                 if finished {
                     // Events newer than the stored history but not handed over yet.
                     FSEventStreamFlushSync(stream);
@@ -254,7 +259,7 @@ mod imp {
             return Err(reason.into());
         }
         if !finished {
-            return Err("reading the event log took too long".into());
+            return Err("reading the event log was stopped or took too long".into());
         }
         let mut changes = Vec::with_capacity(collected.dirs.len());
         for (dir, recursive) in collected.dirs {
@@ -276,7 +281,7 @@ mod tests {
         // The log is written with a short delay; give it a few tries.
         let mut last = Vec::new();
         for _ in 0..20 {
-            last = changes_since(root, since, Duration::from_secs(20)).expect("event log readable");
+            last = changes_since(root, since, Duration::from_secs(20), &|| false).expect("event log readable");
             if last.iter().any(|c| c.path == wanted) {
                 break;
             }
@@ -308,9 +313,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let Some(mut since) = position(dir.path()) else { return };
         since.uuid = "00000000-0000-0000-0000-000000000000".into();
-        assert!(changes_since(dir.path(), &since, Duration::from_secs(5)).is_err());
+        assert!(changes_since(dir.path(), &since, Duration::from_secs(5), &|| false).is_err());
         let far = Position { event_id: 1, uuid: position(dir.path()).unwrap().uuid };
-        assert!(changes_since(dir.path(), &far, Duration::from_secs(5)).is_err());
-        assert!(changes_since(dir.path(), &Position::default(), Duration::from_secs(5)).is_err());
+        assert!(changes_since(dir.path(), &far, Duration::from_secs(5), &|| false).is_err());
+        assert!(changes_since(dir.path(), &Position::default(), Duration::from_secs(5), &|| false).is_err());
     }
 }
