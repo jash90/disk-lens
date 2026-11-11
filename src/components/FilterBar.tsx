@@ -36,7 +36,14 @@ export function FilterBar() {
     }
   }, [searchFocus]);
 
-  // Pola tekstowe stosujemy z opóźnieniem, żeby nie przeliczać przy każdym znaku.
+  // Extensions set elsewhere (a panel's shortcut) show up in the field; otherwise the next
+  // keystroke here would put the old list back.
+  const storeExts = filter.extensions.join(", ");
+  useEffect(() => {
+    setExts((cur) => (splitList(cur).map((e) => e.toLowerCase()).join(", ") === storeExts ? cur : storeExts));
+  }, [storeExts]);
+
+  // Text fields are applied with a delay, so that not every keystroke recomputes the view.
   useEffect(() => {
     const t = setTimeout(() => {
       const extensions = splitList(exts).map((e) => e.toLowerCase());
