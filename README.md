@@ -12,6 +12,7 @@ On top of that:
 - filters: name, minimum size, extensions, exclusions; applied without rescanning;
 - actions: reveal in the file manager (Finder / Explorer), copy path, open a terminal, rescan a folder, move to Trash;
 - export to CSV/JSON, and saving/loading a scan as a `.disklens` file;
+- the last scan is shown again when the app starts, and scanning a folder again reads only what changed since (macOS);
 - in-app updates from GitHub Releases (signed; installing always needs a click).
 
 The app's interface is in Polish. Below, UI labels are quoted as they appear in the app, with an English translation.
@@ -155,7 +156,9 @@ The scanner tests (Unix) build a fixture tree in a temporary directory and check
 | Treemap | Up to 50,000 tiles, BFS layout (the budget is spread evenly across levels). Items smaller than 1 px² are merged into grey "small items". A 1 px gap inside folders shows the structure. |
 | Filters | Computed in a single O(n) pass over the arena and cached per (filter, scan, tree generation). Name, size and extension apply to files; exclusions skip files and whole folders with the given name. |
 | Scan comparison | Matched by paths relative to the root; a list of the 1000 largest changes. |
-| `.disklens` format | `DLENS` header with a format version + postcard + zstd. Version 2 adds access and creation times; version 1 files (Disk Lens 0.3.0 and older) still load, with those times unknown. Files from a newer version are refused with a message. |
+| `.disklens` format | `DLENS` header with a format version + postcard + zstd. Version 2 adds access and creation times; version 3 appends what a refresh needs (hard-link identities, the position in the system's change log) after the unchanged tree. Version 1 and 2 files still load, with the missing data unknown. Files from a newer version are refused with a message. Nodes removed since the scan (Trash, refresh) are left out of the file once they are more than 2% of the tree. |
+| Kept scans | After a scan of at least 50,000 items the tree is written to the app's cache folder (`scans/` under the system cache folder of `com.bartlomiejzimny.disk-lens`; on macOS `~/Library/Caches/…`), in the background, once the window is usable. Scans of the last 3 folders are kept; a whole disk takes about 300 MB. The newest one is shown when the app starts without a folder argument, marked as not checked yet. Scans that enter other volumes (**Inne wolumeny**) are not kept. |
+| Refresh instead of a scan (macOS) | Scanning a folder that has a kept scan (**Skanuj folder…**, **Wolumen**, **Odśwież**) asks the system's change log (FSEvents) which folders changed since that scan and lists only those; new folders are scanned in depth. The result is the tree a full scan would give, with two exceptions: which of several hard links carries the size may differ (as between any two scans), and access times in folders without changes stay as the last full scan saw them (the **Stare pliki** tab says so when access times are in use). A full scan runs instead when the log cannot answer: it was reset or belongs to another volume, events were dropped, more than 4 million events passed (about half a working day of heavy use to a few days), reading it takes over 20 s, or more than 150,000 folders changed. **Plik → Pełny skan od nowa** always scans everything. Windows and Linux have no such log in the app yet and always scan in full. |
 
 ## Limitations
 
@@ -179,6 +182,9 @@ src-tauri/src/
   volume.rs     volume list, capacity/free space of the scan's volume, scan vs. usage
   platform.rs   OS-specific metadata: allocated size, device, inode, iCloud
   persist.rs    saving/loading a scan (format versions), CSV/JSON export, diff
+  refresh.rs    bringing a scanned tree up to date by listing only the changed folders
+  fsevents.rs   macOS change log: folders changed since a saved position
+  cache.rs      kept scans in the app's cache folder
   stale.rs      stale files, folders and project caches; age histogram
   trash_batch.rs  Trash for many items: ancestry de-dup, protection, changed-since-scan check
   commands/     Tauri commands (async, so they don't block the window): state, scan, query, stale, actions, persist
