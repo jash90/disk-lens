@@ -8,6 +8,7 @@ pub mod platform;
 pub mod query;
 pub mod scanner;
 pub mod stale;
+pub mod trash_batch;
 pub mod treemap;
 mod updater;
 pub mod volume;
