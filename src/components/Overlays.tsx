@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { api, errorMessage, type NodeInfo, type TrashCheck } from "../api";
+import { api, errorMessage, isDirKind, type NodeInfo, type TrashCheck } from "../api";
 import { chooseAndScan, confirmTrash, copyPath, openTerminal, rescan, reveal, startScan } from "../lib/actions";
 import { filesLabel, foldersLabel, formatBytes, formatCount, formatDate, middleEllipsis } from "../lib/format";
 import { useStore, useViewArgs } from "../store";
 import { REVEAL_LABEL, shortcut } from "../lib/platform";
+import { useAsync } from "../lib/useAsync";
 import { DiskMini } from "./DiskPanel";
+import { Modal } from "./Modal";
 import { useVolumes, VolumeTile } from "./Volumes";
 
 export function ContextMenu() {
@@ -37,7 +39,7 @@ export function ContextMenu() {
   }, [menu, openMenu, view]);
 
   if (!menu) return null;
-  const isDir = node?.kind === "dir" || node?.kind === "package";
+  const isDir = isDirKind(node?.kind);
   const run = (fn: () => void) => () => {
     openMenu(null);
     fn();
@@ -95,44 +97,36 @@ export function ConfirmTrashDialog() {
 
   if (id === null) return null;
   return (
-    <div className="modal-backdrop" onMouseDown={() => setTrashTarget(null)}>
-      <div
-        className="modal"
-        role="alertdialog"
-        aria-labelledby="trash-title"
-        onMouseDown={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.key === "Escape" && setTrashTarget(null)}
-      >
-        <h2 id="trash-title">Przenieść do Kosza?</h2>
-        {error ? <p className="error">{error}</p> : null}
-        {check ? (
-          <>
-            <p className="path-box">{check.path}</p>
-            <p>
-              Zwolni ok. <b>{formatBytes(check.alloc)}</b>
-              {check.files > 1 ? ` (${filesLabel(check.files)})` : ""}. Element trafi do Kosza – możesz go stamtąd
-              przywrócić.
-            </p>
-            {check.blocked ? <p className="error">Zablokowane: {check.blocked}</p> : null}
-          </>
-        ) : !error ? (
-          <p>Sprawdzam…</p>
-        ) : null}
-        <div className="modal-actions">
-          <button className="btn" onClick={() => setTrashTarget(null)}>
-            Anuluj
-          </button>
-          <button
-            ref={confirmRef}
-            className="btn danger"
-            disabled={!check || !!check.blocked}
-            onClick={() => confirmTrash(id)}
-          >
-            Przenieś do Kosza
-          </button>
-        </div>
+    <Modal titleId="trash-title" role="alertdialog" onClose={() => setTrashTarget(null)}>
+    <h2 id="trash-title">Przenieść do Kosza?</h2>
+      {error ? <p className="error">{error}</p> : null}
+      {check ? (
+        <>
+          <p className="path-box">{check.path}</p>
+          <p>
+            Zwolni ok. <b>{formatBytes(check.alloc)}</b>
+            {check.files > 1 ? ` (${filesLabel(check.files)})` : ""}. Element trafi do Kosza – możesz go stamtąd
+            przywrócić.
+          </p>
+          {check.blocked ? <p className="error">Zablokowane: {check.blocked}</p> : null}
+        </>
+      ) : !error ? (
+        <p>Sprawdzam…</p>
+      ) : null}
+      <div className="modal-actions">
+        <button className="btn" onClick={() => setTrashTarget(null)}>
+          Anuluj
+        </button>
+        <button
+          ref={confirmRef}
+          className="btn danger"
+          disabled={!check || !!check.blocked}
+          onClick={() => confirmTrash(id)}
+        >
+          Przenieś do Kosza
+        </button>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -184,19 +178,10 @@ export function DetailsBar() {
   const info = useStore((s) => s.info);
   const setTrashTarget = useStore((s) => s.setTrashTarget);
   const view = useViewArgs();
-  const [node, setNode] = useState<NodeInfo | null>(null);
-
-  useEffect(() => {
-    if (selected === null) {
-      setNode(null);
-      return;
-    }
-    let alive = true;
-    api.getNode(selected, view).then((n) => alive && setNode(n)).catch(() => alive && setNode(null));
-    return () => {
-      alive = false;
-    };
-  }, [selected, version, view]);
+  const { data: node } = useAsync<NodeInfo | null>(
+    () => (selected === null ? Promise.resolve(null) : api.getNode(selected, view)),
+    [selected, version, view],
+  );
 
   if (!node) {
     return (
@@ -212,7 +197,7 @@ export function DetailsBar() {
       </footer>
     );
   }
-  const isDir = node.kind === "dir" || node.kind === "package";
+  const isDir = isDirKind(node.kind);
   return (
     <footer className="details">
       <div className="d-main">

@@ -3,6 +3,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, errorMessage, type UpdateInfo } from "../api";
 import { formatBytes } from "../lib/format";
+import { Modal } from "./Modal";
 import { useStore } from "../store";
 
 const RELEASES = "https://github.com/jash90/disk-lens/releases/latest";
@@ -96,68 +97,60 @@ export function UpdateDialog() {
   const fraction = installing && status.total > 0 ? Math.min(1, status.done / status.total) : 0;
 
   return (
-    <div className="modal-backdrop" onMouseDown={close}>
-      <div
-        className="modal update-modal"
-        role="dialog"
-        aria-labelledby="update-title"
-        onMouseDown={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.key === "Escape" && close()}
-      >
-        <h2 id="update-title">{info ? `Disk Lens ${info.version}` : "Aktualizacje"}</h2>
-        <p className="muted">
-          Zainstalowana wersja: {version || known?.currentVersion || "?"}
-          {info?.date ? ` · nowa wersja z ${info.date}` : ""}
-        </p>
+    <Modal titleId="update-title" className="update-modal" onClose={close}>
+      <h2 id="update-title">{info ? `Disk Lens ${info.version}` : "Aktualizacje"}</h2>
+      <p className="muted">
+        Zainstalowana wersja: {version || known?.currentVersion || "?"}
+        {info?.date ? ` · nowa wersja z ${info.date}` : ""}
+      </p>
 
-        {status.kind === "checking" ? <p>Sprawdzam…</p> : null}
-        {status.kind === "latest" ? <p>Masz najnowszą wersję.</p> : null}
-        {status.kind === "error" ? <p className="error">{status.message}</p> : null}
-        {info?.notes && !installing ? <div className="update-notes">{info.notes}</div> : null}
-        {installing ? (
-          <>
-            <div className="update-progress" role="progressbar" aria-valuenow={Math.round(fraction * 100)}>
-              <span style={{ width: `${Math.round(fraction * 100)}%` }} />
-            </div>
-            <p className="muted">
-              {status.total > 0
-                ? `Pobrano ${formatBytes(status.done)} z ${formatBytes(status.total)}`
-                : `Pobrano ${formatBytes(status.done)}`}
-              {" "}· po instalacji aplikacja uruchomi się ponownie.
-            </p>
-          </>
-        ) : null}
-        {status.kind === "available" && scanning ? (
-          <p className="muted">Instalacja uruchomi aplikację ponownie – poczekaj na koniec skanu albo go anuluj.</p>
-        ) : null}
+      {status.kind === "checking" ? <p>Sprawdzam…</p> : null}
+      {status.kind === "latest" ? <p>Masz najnowszą wersję.</p> : null}
+      {status.kind === "error" ? <p className="error">{status.message}</p> : null}
+      {info?.notes && !installing ? <div className="update-notes">{info.notes}</div> : null}
+      {installing ? (
+        <>
+          <div className="update-progress" role="progressbar" aria-valuenow={Math.round(fraction * 100)}>
+            <span style={{ width: `${Math.round(fraction * 100)}%` }} />
+          </div>
+          <p className="muted">
+            {status.total > 0
+              ? `Pobrano ${formatBytes(status.done)} z ${formatBytes(status.total)}`
+              : `Pobrano ${formatBytes(status.done)}`}
+            {" "}· po instalacji aplikacja uruchomi się ponownie.
+          </p>
+        </>
+      ) : null}
+      {status.kind === "available" && scanning ? (
+        <p className="muted">Instalacja uruchomi aplikację ponownie – poczekaj na koniec skanu albo go anuluj.</p>
+      ) : null}
 
-        <div className="modal-actions">
-          {status.kind === "error" ? (
-            <button className="btn" onClick={() => openUrl(RELEASES).catch(() => {})}>
-              Otwórz stronę wydania
-            </button>
-          ) : null}
-          {status.kind === "error" && !status.info ? (
-            <button className="btn" onClick={() => setAttempt((a) => a + 1)}>
-              Spróbuj ponownie
-            </button>
-          ) : null}
-          {status.kind === "latest" || (status.kind === "error" && !status.info) ? (
-            <button className="btn" onClick={close}>
-              Zamknij
-            </button>
-          ) : (
-            <button className="btn" disabled={installing} onClick={close}>
-              Później
-            </button>
-          )}
-          {status.kind === "available" || (status.kind === "error" && status.info) ? (
-            <button className="btn primary" disabled={scanning} onClick={() => info && install(info)}>
-              Pobierz i zainstaluj
-            </button>
-          ) : null}
-        </div>
+      <div className="modal-actions">
+        {status.kind === "error" ? (
+          <button className="btn" onClick={() => openUrl(RELEASES).catch(() => {})}>
+            Otwórz stronę wydania
+          </button>
+        ) : null}
+        {status.kind === "error" && !status.info ? (
+          <button className="btn" onClick={() => setAttempt((a) => a + 1)}>
+            Spróbuj ponownie
+          </button>
+        ) : null}
+        {status.kind === "latest" || (status.kind === "error" && !status.info) ? (
+          <button className="btn" onClick={close}>
+            Zamknij
+          </button>
+        ) : (
+          <button className="btn" disabled={installing} onClick={close}>
+            Później
+          </button>
+        )}
+        {status.kind === "available" || (status.kind === "error" && status.info) ? (
+          <button className="btn primary" disabled={scanning} onClick={() => info && install(info)}>
+            Pobierz i zainstaluj
+          </button>
+        ) : null}
       </div>
-    </div>
+    </Modal>
   );
 }

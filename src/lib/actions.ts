@@ -50,6 +50,13 @@ export async function rescan(id: number) {
   });
 }
 
+/** Right-click on a node: select it and open its context menu at the pointer. */
+export function openNodeMenu(e: { preventDefault(): void; clientX: number; clientY: number }, id: number, source: "tree" | "map" | "other" = "other") {
+  e.preventDefault();
+  st().select(id, source);
+  st().openMenu({ x: e.clientX, y: e.clientY, id });
+}
+
 export async function reveal(id: number) {
   await guarded(null, () => api.reveal(id));
 }

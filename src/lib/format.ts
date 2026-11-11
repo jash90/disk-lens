@@ -16,6 +16,11 @@ export function formatBytes(bytes: number): string {
   return i === 0 ? `${num0.format(v)} B` : `${num1.format(v)} ${UNITS[i]}`;
 }
 
+/** Size change with an explicit sign: "+1,2 MB", "−300 B". */
+export function formatSignedBytes(delta: number): string {
+  return `${delta >= 0 ? "+" : "−"}${formatBytes(Math.abs(delta))}`;
+}
+
 export function formatCount(n: number): string {
   return num0.format(n);
 }

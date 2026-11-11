@@ -1,50 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, TILE_DIR, TILE_REST, type NodeInfo, type Tile } from "../api";
-import { AGE_COLORS, AGE_NAMES, CATEGORY_COLORS, CATEGORY_NAMES, tileColor } from "../lib/colors";
+import { api, isDirKind, TILE_REST, type NodeInfo, type Tile } from "../api";
+import { openNodeMenu } from "../lib/actions";
+import { AGE_COLORS, AGE_NAMES, CATEGORY_COLORS, CATEGORY_NAMES } from "../lib/colors";
 import { formatBytes, formatPct } from "../lib/format";
+import { buildGrid, drawTiles, hitTest } from "../lib/treemapCanvas";
 import { useStore, useViewArgs } from "../store";
 
-const CELL = 24;
-/** W trakcie skanu treemapę odświeżamy rzadziej niż listę – layout jest droższy. */
+/** During a scan the treemap refreshes less often than the list: the layout is more expensive. */
 const SCAN_REFRESH_MS = 1200;
-
-interface Grid {
-  cols: number;
-  rows: number;
-  cells: number[][];
-}
-
-function buildGrid(tiles: Tile[], w: number, h: number): Grid {
-  const cols = Math.max(1, Math.ceil(w / CELL));
-  const rows = Math.max(1, Math.ceil(h / CELL));
-  const cells: number[][] = Array.from({ length: cols * rows }, () => []);
-  tiles.forEach((t, i) => {
-    if (t.w <= 0 || t.h <= 0) return;
-    const c0 = Math.max(0, Math.floor(t.x / CELL));
-    const c1 = Math.min(cols - 1, Math.floor((t.x + t.w) / CELL));
-    const r0 = Math.max(0, Math.floor(t.y / CELL));
-    const r1 = Math.min(rows - 1, Math.floor((t.y + t.h) / CELL));
-    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) cells[r * cols + c].push(i);
-  });
-  return { cols, rows, cells };
-}
-
-function hitTest(grid: Grid, tiles: Tile[], x: number, y: number): number {
-  const c = Math.floor(x / CELL);
-  const r = Math.floor(y / CELL);
-  if (c < 0 || r < 0 || c >= grid.cols || r >= grid.rows) return -1;
-  const list = grid.cells[r * grid.cols + c];
-  // Kafle są w kolejności BFS – głębsze (leżące na wierzchu) są dalej.
-  for (let k = list.length - 1; k >= 0; k--) {
-    const t = tiles[list[k]];
-    if (x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h) return list[k];
-  }
-  return -1;
-}
-
-function cssVar(name: string): string {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-}
 
 export function Treemap() {
   const root = useStore((s) => s.root);
@@ -54,7 +17,6 @@ export function Treemap() {
   const selected = useStore((s) => s.selected);
   const select = useStore((s) => s.select);
   const navigate = useStore((s) => s.navigate);
-  const openMenu = useStore((s) => s.openMenu);
   const setColorMode = useStore((s) => s.setColorMode);
   const view = useViewArgs();
 
@@ -69,7 +31,7 @@ export function Treemap() {
   const [theme, setTheme] = useState(0);
   const lastFetch = useRef(0);
 
-  // Rozmiar płótna = rozmiar kontenera.
+  // Canvas size = container size.
   useEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
@@ -78,7 +40,7 @@ export function Treemap() {
     return () => ro.disconnect();
   }, []);
 
-  // Przerysowanie po zmianie motywu systemowego.
+  // Redraw when the system theme changes.
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const on = () => setTheme((t) => t + 1);
@@ -86,7 +48,7 @@ export function Treemap() {
     return () => mq.removeEventListener("change", on);
   }, []);
 
-  // Pobranie layoutu (z debounce przy zmianie rozmiaru i dławieniem w trakcie skanu).
+  // Fetch the layout (debounced on resize and throttled during a scan).
   useEffect(() => {
     if (size.w < 10 || size.h < 10) return;
     let alive = true;
@@ -119,7 +81,7 @@ export function Treemap() {
     return m;
   }, [tiles]);
 
-  // Zaznaczenie spoza mapy (np. głęboki plik): podświetl najgłębszego widocznego przodka.
+  // Selection made outside the map (e.g. a deep file): highlight the deepest visible ancestor.
   useEffect(() => {
     if (selected === null) {
       setHighlight(null);
@@ -143,69 +105,16 @@ export function Treemap() {
     };
   }, [selected, idToIdx]);
 
-  // Rysowanie.
+  // Drawing.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || size.w === 0) return;
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.floor(size.w * dpr);
-    canvas.height = Math.floor(size.h * dpr);
-    canvas.style.width = `${size.w}px`;
-    canvas.style.height = `${size.h}px`;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = cssVar("--map-bg");
-    ctx.fillRect(0, 0, size.w, size.h);
-    const dirFill = [cssVar("--map-dir-0"), cssVar("--map-dir-1")];
-    const restFill = cssVar("--map-rest");
-
-    for (const t of tiles) {
-      if (t.w <= 0 || t.h <= 0) continue;
-      if (t.kind === TILE_DIR) {
-        ctx.fillStyle = dirFill[t.depth % 2];
-        ctx.fillRect(t.x, t.y, t.w, t.h);
-        continue;
-      }
-      if (t.kind === TILE_REST) {
-        ctx.fillStyle = restFill;
-        ctx.fillRect(t.x, t.y, t.w, t.h);
-        continue;
-      }
-      const color = tileColor(colorMode, t.cat, t.age);
-      if (t.w * t.h > 300) {
-        // „Poduszka” jak w GrandPerspective: jaśniej u góry z lewej, ciemniej na dole z prawej.
-        const g = ctx.createLinearGradient(t.x, t.y, t.x + t.w, t.y + t.h);
-        g.addColorStop(0, color);
-        g.addColorStop(1, shade(color, -0.35));
-        ctx.fillStyle = g;
-      } else {
-        ctx.fillStyle = color;
-      }
-      ctx.fillRect(t.x, t.y, t.w, t.h);
-      if (t.w > 3 && t.h > 3) {
-        ctx.strokeStyle = "rgba(0,0,0,0.28)";
-        ctx.lineWidth = 0.5;
-        ctx.strokeRect(t.x + 0.25, t.y + 0.25, t.w - 0.5, t.h - 0.5);
-      }
-    }
-
-    const outline = (t: Tile, color: string, width: number) => {
-      ctx.strokeStyle = color;
-      ctx.lineWidth = width;
-      ctx.strokeRect(t.x + width / 2, t.y + width / 2, Math.max(0, t.w - width), Math.max(0, t.h - width));
-    };
-    if (hover && tiles[hover.idx]) outline(tiles[hover.idx], "rgba(255,255,255,0.85)", 1);
-    if (highlight !== null) {
-      const i = idToIdx.get(highlight);
-      if (i !== undefined) {
-        outline(tiles[i], "rgba(0,0,0,0.9)", 4);
-        outline(tiles[i], "#ffffff", 2);
-      }
-    }
+    const hoverTile = hover ? tiles[hover.idx] : undefined;
+    const at = highlight !== null ? idToIdx.get(highlight) : undefined;
+    drawTiles(canvas, tiles, size.w, size.h, colorMode, hoverTile, at !== undefined ? tiles[at] : undefined);
   }, [tiles, size, colorMode, hover, highlight, idToIdx, theme]);
 
-  // Tooltip: dane węzła pod kursorem (z małym opóźnieniem).
+  // Tooltip: data of the node under the pointer (with a short delay).
   const hoverTile = hover ? tiles[hover.idx] : undefined;
   const hoverId = hoverTile ? hoverTile.id : null;
   useEffect(() => {
@@ -246,7 +155,7 @@ export function Treemap() {
     if (idx >= 0) select(tiles[idx].id, "map");
   };
 
-  // Zoom stopniowy: wchodzimy o jeden poziom – w folder (dziecko korzenia) leżący pod kursorem.
+  // Step-wise zoom: go one level down, into the folder (a child of the root) under the pointer.
   const onDoubleClick = async (e: React.MouseEvent) => {
     const idx = pick(e);
     if (idx < 0) return;
@@ -256,16 +165,16 @@ export function Treemap() {
     const next = at >= 0 ? chain[at + 1] : undefined;
     if (!next) return;
     const n = await api.getNode(next.id, view).catch(() => null);
-    if (n && (n.kind === "dir" || n.kind === "package")) navigate(n.id);
+    if (n && isDirKind(n.kind)) navigate(n.id);
   };
 
   const onContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
     const idx = pick(e);
-    if (idx < 0) return;
-    const id = tiles[idx].id;
-    select(id, "map");
-    openMenu({ x: e.clientX, y: e.clientY, id });
+    if (idx < 0) {
+      e.preventDefault();
+      return;
+    }
+    openNodeMenu(e, tiles[idx].id, "map");
   };
 
   const tip = (() => {
@@ -337,14 +246,3 @@ export function Treemap() {
     </div>
   );
 }
-
-/** Przyciemnia (ujemne) lub rozjaśnia kolor #rrggbb. */
-function shade(hex: string, amount: number): string {
-  const n = parseInt(hex.slice(1), 16);
-  const f = (c: number) => Math.round(amount < 0 ? c * (1 + amount) : c + (255 - c) * amount);
-  const r = f((n >> 16) & 255);
-  const g = f((n >> 8) & 255);
-  const b = f(n & 255);
-  return `rgb(${r},${g},${b})`;
-}
-

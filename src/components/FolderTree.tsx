@@ -1,6 +1,7 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, Flags, type Page, type Row, type SortKey } from "../api";
+import { api, Flags, isDirKind, type Page, type Row, type SortKey } from "../api";
+import { openNodeMenu } from "../lib/actions";
 import { kindIcon } from "../lib/colors";
 import { formatBytes, formatCount, formatDate, formatPct } from "../lib/format";
 import { useStore, useViewArgs } from "../store";
@@ -52,7 +53,6 @@ export function FolderTree() {
   const select = useStore((s) => s.select);
   const navigate = useStore((s) => s.navigate);
   const setSort = useStore((s) => s.setSort);
-  const openMenu = useStore((s) => s.openMenu);
   const view = useViewArgs();
 
   const [pages, setPages] = useState<Map<number, Page>>(new Map());
@@ -221,7 +221,7 @@ export function FolderTree() {
       }
     } else if (e.key === "Enter") {
       const r = rowAt(i);
-      if (r && (r.kind === "dir" || r.kind === "package")) navigate(r.id);
+      if (r && isDirKind(r.kind)) navigate(r.id);
     }
   };
 
@@ -273,12 +273,8 @@ export function FolderTree() {
                 className={`tr ${selected === r.id ? "selected" : ""} ${r.flags & Flags.HIDDEN ? "hidden-file" : ""}`}
                 style={style}
                 onClick={() => select(r.id, "tree")}
-                onDoubleClick={() => (isDir || r.kind === "package" ? navigate(r.id) : undefined)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  select(r.id, "tree");
-                  openMenu({ x: e.clientX, y: e.clientY, id: r.id });
-                }}
+                onDoubleClick={() => (isDirKind(r.kind) ? navigate(r.id) : undefined)}
+                onContextMenu={(e) => openNodeMenu(e, r.id, "tree")}
               >
                 <span className="c-name" style={{ paddingLeft: 6 + f.depth * INDENT }}>
                   <span
@@ -303,8 +299,8 @@ export function FolderTree() {
                   </span>
                   <span className="pct-label">{formatPct(r.pct)}</span>
                 </span>
-                <span className="c-num c-files">{r.kind === "dir" || r.kind === "package" ? formatCount(r.files) : ""}</span>
-                <span className="c-num c-dirs">{r.kind === "dir" || r.kind === "package" ? formatCount(r.dirs) : ""}</span>
+                <span className="c-num c-files">{isDirKind(r.kind) ? formatCount(r.files) : ""}</span>
+                <span className="c-num c-dirs">{isDirKind(r.kind) ? formatCount(r.dirs) : ""}</span>
                 <span className="c-date">{formatDate(r.mtime, true)}</span>
               </div>
             );

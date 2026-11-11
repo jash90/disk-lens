@@ -4,23 +4,11 @@ import { Breadcrumb } from "./components/Breadcrumb";
 import { FilterBar } from "./components/FilterBar";
 import { FolderTree } from "./components/FolderTree";
 import { ConfirmTrashDialog, ContextMenu, DetailsBar, Toasts, Welcome } from "./components/Overlays";
-import { DiskPanel } from "./components/DiskPanel";
-import { DiffPanel, SkippedPanel, TopFiles, TypeBreakdownPanel } from "./components/Panels";
+import { Tabs } from "./components/Tabs";
 import { Toolbar } from "./components/Toolbar";
-import { Treemap } from "./components/Treemap";
 import { UpdateDialog, useUpdateEvents } from "./components/Update";
 import { chooseAndScan, refreshInfo, rescan, startScan } from "./lib/actions";
-import { formatCount } from "./lib/format";
-import { useStore, type Tab } from "./store";
-
-const TABS: { id: Tab; label: string }[] = [
-  { id: "treemap", label: "Treemapa" },
-  { id: "top", label: "Największe pliki" },
-  { id: "types", label: "Wg typu" },
-  { id: "skipped", label: "Pominięte" },
-  { id: "diff", label: "Porównanie" },
-  { id: "disk", label: "Dysk" },
-];
+import { useStore } from "./store";
 
 function isTyping(e: KeyboardEvent): boolean {
   const el = e.target as HTMLElement | null;
@@ -33,7 +21,7 @@ function useProgressEvents() {
       const s = useStore.getState();
       if (s.info && p.scanId !== s.info.scanId) return;
       s.setProgress(p);
-      // Sumy w stopce i liczniki rosną razem ze skanem.
+      // Footer totals and counters grow along with the scan.
       refreshInfo().then(() => useStore.getState().bump());
     });
     refreshInfo().then(async (info) => {
@@ -74,7 +62,7 @@ function useShortcuts() {
   }, []);
 }
 
-/** Podział drzewo/panel zapamiętany jako proporcja, żeby pasował do każdej szerokości okna. */
+/** Tree/panel split remembered as a ratio, so that it fits any window width. */
 function Split({ left, right }: { left: React.ReactNode; right: React.ReactNode }) {
   const [ratio, setRatio] = useState(() => {
     try {
@@ -106,7 +94,7 @@ function Split({ left, right }: { left: React.ReactNode; right: React.ReactNode 
     try {
       localStorage.setItem("split-ratio", ratio.toFixed(3));
     } catch {
-      /* brak storage – nie szkodzi */
+      /* no storage: not a problem */
     }
   }, [ratio]);
   return (
@@ -131,8 +119,6 @@ export function App() {
   useShortcuts();
   useUpdateEvents();
   const info = useStore((s) => s.info);
-  const tab = useStore((s) => s.tab);
-  const setTab = useStore((s) => s.setTab);
 
   return (
     <div className="app">
@@ -146,30 +132,7 @@ export function App() {
           <Split
             left={<FolderTree />}
             right={
-              <div className="right">
-                <div className="tabs" role="tablist">
-                  {TABS.map((t) => (
-                    <button
-                      key={t.id}
-                      role="tab"
-                      aria-selected={tab === t.id}
-                      className={tab === t.id ? "on" : ""}
-                      onClick={() => setTab(t.id)}
-                    >
-                      {t.label}
-                      {t.id === "skipped" && info.skipped > 0 ? <span className="count">{formatCount(info.skipped)}</span> : null}
-                    </button>
-                  ))}
-                </div>
-                <div className="tab-body">
-                  {tab === "treemap" ? <Treemap /> : null}
-                  {tab === "top" ? <TopFiles /> : null}
-                  {tab === "types" ? <TypeBreakdownPanel /> : null}
-                  {tab === "skipped" ? <SkippedPanel /> : null}
-                  {tab === "diff" ? <DiffPanel /> : null}
-                  {tab === "disk" ? <DiskPanel /> : null}
-                </div>
-              </div>
+              <Tabs />
             }
           />
           <DetailsBar />

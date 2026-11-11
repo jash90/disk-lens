@@ -5,6 +5,11 @@ export type SizeMode = "alloc" | "logical";
 export type SortKey = "name" | "size" | "files" | "dirs" | "mtime";
 export type NodeKind = "file" | "dir" | "package" | "symlink" | "other";
 
+/** Folders and packages: nodes that have totals and can be entered. */
+export function isDirKind(kind: NodeKind | undefined): boolean {
+  return kind === "dir" || kind === "package";
+}
+
 export interface Filter {
   query: string;
   minSize: number;

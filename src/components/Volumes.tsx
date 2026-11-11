@@ -1,26 +1,15 @@
-import { useEffect, useState } from "react";
 import { api, type Volume } from "../api";
 import { formatBytes } from "../lib/format";
+import { useAsync } from "../lib/useAsync";
 import { useStore } from "../store";
 
-/** Lista wolumenów; odświeżana przy każdej zmianie danych (skan, Kosz, ponowny skan). */
+/** List of volumes, refreshed on every data change (scan, Trash, rescan). */
 export function useVolumes(): Volume[] {
   const version = useStore((s) => s.version);
-  const [volumes, setVolumes] = useState<Volume[]>([]);
-  useEffect(() => {
-    let alive = true;
-    api
-      .listVolumes()
-      .then((v) => alive && setVolumes(v))
-      .catch(() => alive && setVolumes([]));
-    return () => {
-      alive = false;
-    };
-  }, [version]);
-  return volumes;
+  return useAsync<Volume[]>(() => api.listVolumes(), [version]).data ?? [];
 }
 
-/** Kafelek wolumenu z paskiem zajętości. */
+/** Volume tile with a usage bar. */
 export function VolumeTile({ volume, current, onClick }: { volume: Volume; current?: boolean; onClick: () => void }) {
   const used = volume.total - volume.free;
   return (
