@@ -58,9 +58,14 @@ export function middleEllipsis(s: string, max: number): string {
   return `${s.slice(0, head)}…${s.slice(s.length - (keep - head))}`;
 }
 
+/** The noun alone, for when the number is rendered separately: "plik", "pliki", "plików". */
+export function filesNoun(n: number): string {
+  return plural(n, "plik", "pliki", "plików");
+}
+
 /** „1 plik”, „3 pliki”, „12 plików”. */
 export function filesLabel(n: number): string {
-  return `${formatCount(n)} ${plural(n, "plik", "pliki", "plików")}`;
+  return `${formatCount(n)} ${filesNoun(n)}`;
 }
 
 /** „1 folder”, „3 foldery”, „12 folderów”. */

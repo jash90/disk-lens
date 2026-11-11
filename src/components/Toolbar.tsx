@@ -9,7 +9,7 @@ import {
   saveScan,
   startScan,
 } from "../lib/actions";
-import { filesLabel, foldersLabel, formatBytes, formatCount, formatDuration, middleEllipsis } from "../lib/format";
+import { filesLabel, filesNoun, foldersLabel, formatBytes, formatCount, formatDuration, middleEllipsis } from "../lib/format";
 import { useStore } from "../store";
 import { shortcut } from "../lib/platform";
 
@@ -82,7 +82,7 @@ export function Toolbar() {
           <>
             <span className="spinner" aria-hidden />
             <span className="stat">
-              <b>{formatCount(progress.files)}</b> plików · <b>{formatBytes(progress.bytes)}</b> ·{" "}
+              <b>{formatCount(progress.files)}</b> {filesNoun(progress.files)} · <b>{formatBytes(progress.bytes)}</b> ·{" "}
               {formatDuration(progress.elapsedMs)}
             </span>
             <span className="current" title={progress.current}>
