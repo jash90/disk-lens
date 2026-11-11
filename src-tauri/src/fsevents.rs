@@ -20,8 +20,6 @@ pub struct Position {
 /// More ids than this between two points and the replay takes longer than it saves
 /// (about 3 s per million on the machine it was measured on).
 pub const MAX_ID_DISTANCE: u64 = 4_000_000;
-/// More changed folders than this and a full scan is the safer choice.
-const MAX_CHANGES: usize = 150_000;
 
 const DROPPED: &str = "the system dropped events";
 
@@ -75,6 +73,9 @@ mod imp {
     use std::path::PathBuf;
     use std::sync::mpsc::{sync_channel, SyncSender};
     use std::sync::Mutex;
+
+    /// More changed folders than this and a full scan is the safer choice.
+    const MAX_CHANGES: usize = 150_000;
 
     type CfRef = *const c_void;
     type Callback = extern "C" fn(CfRef, *mut c_void, usize, *mut c_void, *const u32, *const u64);
