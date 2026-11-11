@@ -3,6 +3,7 @@ import { useStore, type Tab } from "../store";
 import { DiskPanel } from "./DiskPanel";
 import { DiffPanel } from "./panels/Diff";
 import { SkippedPanel } from "./panels/Skipped";
+import { StaleFiles } from "./panels/StaleFiles";
 import { TopFiles } from "./panels/TopFiles";
 import { TypeBreakdownPanel } from "./panels/TypeBreakdown";
 import { Treemap } from "./Treemap";
@@ -10,6 +11,7 @@ import { Treemap } from "./Treemap";
 const TABS: { id: Tab; label: string }[] = [
   { id: "treemap", label: "Treemapa" },
   { id: "top", label: "Największe pliki" },
+  { id: "stale", label: "Stare pliki" },
   { id: "types", label: "Wg typu" },
   { id: "skipped", label: "Pominięte" },
   { id: "diff", label: "Porównanie" },
@@ -34,6 +36,7 @@ export function Tabs() {
       <div className="tab-body">
         {tab === "treemap" ? <Treemap /> : null}
         {tab === "top" ? <TopFiles /> : null}
+        {tab === "stale" ? <StaleFiles /> : null}
         {tab === "types" ? <TypeBreakdownPanel /> : null}
         {tab === "skipped" ? <SkippedPanel /> : null}
         {tab === "diff" ? <DiffPanel /> : null}

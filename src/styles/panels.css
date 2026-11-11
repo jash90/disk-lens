@@ -269,3 +269,72 @@ table.list .num {
 .status.removed {
   color: var(--success);
 }
+
+/* Stale files tab */
+
+.stale {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.stale-head {
+  padding: 10px 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.age-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+
+.stale-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.stale-controls .check,
+.stale-days {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.stale-days input {
+  width: 72px;
+}
+
+.stale-spacer {
+  flex: 1;
+}
+
+.stale-hint {
+  margin: 0 0 8px;
+  font-size: 11px;
+}
+
+table.list .check-col {
+  width: 24px;
+  text-align: center;
+}
+
+.stale-more {
+  display: block;
+  margin: 10px auto 0;
+}
+
+.stale-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
